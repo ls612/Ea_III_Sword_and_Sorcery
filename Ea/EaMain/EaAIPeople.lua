@@ -11,7 +11,6 @@ local Dprint = DEBUG_PRINT and print or function() end
 --------------------------------------------------------------
 
 local EAMOD_LEADERSHIP =					GameInfoTypes.EAMOD_LEADERSHIP
-local PROMOTION_LEARN_SPELL =				GameInfoTypes.PROMOTION_LEARN_SPELL
 
 local FIRST_SPELL_ID =						FIRST_SPELL_ID
 local LAST_SPELL_ID =						LAST_SPELL_ID
@@ -24,7 +23,9 @@ local Rand = Map.Rand
 --------------------------------------------------------------
 local sortedMods = {}
 for modInfo in GameInfo.EaModifiers() do
-	sortedMods[modInfo.ID] = modInfo.ID
+	if modInfo.Type ~= "EAMOD_LEADERSHIP" then
+		sortedMods[modInfo.ID] = modInfo.ID
+	end
 end
 
 local spellList = {}
@@ -32,25 +33,6 @@ local spellList = {}
 function AIPickGPPromotion(iPlayer, iPerson, unit)
 	print("Running AIPickGPPromotion ", iPlayer, iPerson, unit)
 	local eaPerson = gPeople[iPerson]
-
-	if eaPerson.spells then		
-		--For now, assume that tech progress makes sense for subclass. Just learn everything possible.
-		local TestSpellLearnable = TestSpellLearnable
-		local numSpells = 0
-		for spellID = FIRST_SPELL_ID, LAST_SPELL_ID do
-			if TestSpellLearnable(iPlayer, iPerson, spellID, nil) then
-				numSpells = numSpells + 1
-				spellList[numSpells] = spellID
-			end
-		end
-		if numSpells > 0 then
-			local spellID = spellList[Rand(numSpells, "hello") + 1]
-			--eaPerson.spells[spellID] = true
-			eaPerson.spells[#eaPerson.spells + 1] = spellID
-			print("AI learned a spell: ", GameInfo.EaActions[spellID].Type)
-			return
-		end
-	end
 
 	--AI GP wants to match promotion progress to modMemory, so 3:1:0 past mod use matches 3:1:0 promotion level
 	
@@ -98,7 +80,7 @@ function AIPickGPPromotion(iPlayer, iPerson, unit)
 
 	print("!!!! WARNING: GP did not gain any promotion from modMemory algorithm; picking first that can be acquired")
 	for promoInfo in GameInfo.UnitPromotions() do
-		if unit:CanAcquirePromotion(promoInfo.ID) and promoInfo.ID ~= PROMOTION_LEARN_SPELL then
+		if unit:CanAcquirePromotion(promoInfo.ID) then
 			print("AI taking promotion ", promoInfo.Type)
 			unit:SetHasPromotion(promoInfo.ID, true)
 			local prefix, level = GetPromoPrefixLevelFromType(promoInfo.Type)

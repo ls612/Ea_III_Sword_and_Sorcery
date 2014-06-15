@@ -49,6 +49,7 @@ CREATE TABLE EaActions ('ID' INTEGER PRIMARY KEY AUTOINCREMENT,
 						--Unit reqs (any EaAction may also have a Lua req defined in EaActions.lua)
 						'GPOnly' BOOLEAN DEFAULT NULL,
 						'GPClass' TEXT DEFAULT NULL,	
+						'OrGPClass' TEXT DEFAULT NULL,	
 						'NotGPClass' TEXT DEFAULT NULL,		
 						'GPSubclass' TEXT DEFAULT NULL,	
 						'OrGPSubclass' TEXT DEFAULT NULL,
@@ -81,7 +82,7 @@ CREATE TABLE EaActions ('ID' INTEGER PRIMARY KEY AUTOINCREMENT,
 						--Process
 						'GPModType1' TEXT DEFAULT NULL,
 						'GPModType2' TEXT DEFAULT NULL,
-						'ConsiderTowerTemple' BOOLEAN DEFAULT NULL,	--Use only for Spells!
+						'ConsiderTowerTemple' BOOLEAN DEFAULT NULL,
 						'NoGPNumLimit' BOOLEAN DEFAULT NULL,
 						'FinishMoves' BOOLEAN DEFAULT 1,
 						'StayInvisible' BOOLEAN DEFAULT NULL,
@@ -123,7 +124,7 @@ INSERT INTO EaActions (ID,	Type,			Description,			GPOnly) VALUES
 --Order here is the order they will appear in actions or builds panel (all before core game actions and builds)
 
 --Non-GP
-INSERT INTO EaActions (Type,			Description,							Help,										UnitTypePrefix1,	NormalCombatUnit,	UIType,		AITarget,		City,	IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							Help,										UnitTypePrefix1,	NormalCombatUnit,	UIType,		AITarget,		City,	IconIndex,	IconAtlas		) VALUES
 ('EA_ACTION_SELL_SLAVES',				'TXT_KEY_EA_ACTION_SELL_SLAVES',		'TXT_KEY_EA_ACTION_SELL_SLAVE_HELP',		'UNIT_SLAVES',		NULL,				'Action',	'OwnCities',	'Own',	17,			'TECH_ATLAS_1'	),
 ('EA_ACTION_RENDER_SLAVES',				'TXT_KEY_EA_ACTION_RENDER_SLAVES',		'TXT_KEY_EA_ACTION_RENDER_SLAVE_HELP',		'UNIT_SLAVES',		NULL,				'Action',	'OwnCities',	'Own',	5,			'TECH_ATLAS_1'	),
 ('EA_ACTION_HIRE_OUT_MERC',				'TXT_KEY_EA_ACTION_HIRE_OUT_MERC',		'TXT_KEY_EA_ACTION_HIRE_OUT_MERC_HELP',		NULL,				1,					'Action',	'Self',			NULL,	17,			'TECH_ATLAS_1'	),
@@ -135,7 +136,7 @@ UPDATE EaActions SET FinishMoves = NULL, PolicyReq = 'POLICY_MERCENARIES', Promo
 UPDATE EaActions SET FinishMoves = NULL, PolicyReq = 'POLICY_MERCENARIES', PromotionReq = 'PROMOTION_FOR_HIRE' WHERE Type = 'EA_ACTION_CANC_HIRE_OUT_MERC';
 
 --Non-GP alternate upgrades
-INSERT INTO EaActions (Type,			Description,				UnitTypePrefix1,		UnitTypePrefix2,		UnitTypePrefix3,	TechReq,				UnitUpgradeTypePrefix) VALUES
+INSERT INTO EaActions (Type,			Description,				UnitTypePrefix1,		UnitTypePrefix2,		UnitTypePrefix3,	TechReq,				UnitUpgradeTypePrefix	) VALUES
 ('EA_ACTION_UPGRD_MED_INF',				'TXT_KEY_COMMAND_UPGRADE',	'UNIT_WARRIORS',		NULL,					NULL,				'TECH_IRON_WORKING',	'UNIT_MEDIUM_INFANTRY'	),
 ('EA_ACTION_UPGRD_HEAVY_INF',			'TXT_KEY_COMMAND_UPGRADE',	'UNIT_RANGERS',			NULL,					NULL,				'TECH_METAL_CASTING',	'UNIT_HEAVY_INFANTRY'	),
 ('EA_ACTION_UPGRD_IMMORTALS',			'TXT_KEY_COMMAND_UPGRADE',	'UNIT_WARRIORS',		'UNIT_LIGHT_INFANTRY',	'UNIT_RANGERS',		'TECH_MITHRIL_WORKING',	'UNIT_IMMORTALS'		),
@@ -157,7 +158,7 @@ UPDATE EaActions SET PolicyReq = 'POLICY_SLAVE_ARMIES' WHERE Type = 'EA_ACTION_U
 --Lua assumes that EA_ACTION_TAKE_LEADERSHIP is the first GP action
 
 --Common actions
-INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,		AITarget,		City,	GPModType1,			ProgressHolder,	IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,		AITarget,		City,	GPModType1,			ProgressHolder,	IconIndex,	IconAtlas			) VALUES
 ('EA_ACTION_TAKE_LEADERSHIP',			'TXT_KEY_EA_ACTION_TAKE_LEADERSHIP',	'TXT_KEY_EA_ACTION_TAKE_LEADERSHIP_HELP',	1,		'Action',	'OwnCapital',	'Own',	'EAMOD_LEADERSHIP',	NULL,			0,			'EA_ACTION_ATLAS'	),
 ('EA_ACTION_TAKE_RESIDENCE',			'TXT_KEY_EA_ACTION_TAKE_RESIDENCE',		NULL,										1,		'Action',	'OwnCities',	'Own',	'EAMOD_LEADERSHIP',	'Person',		40,			'UNIT_ACTION_ATLAS'	),
 --('EA_ACTION_JOIN',					'TXT_KEY_EA_ACTION_JOIN',				NULL,										1,		'Action',	NULL,			NULL,	NULL,				NULL,			18,			'UNIT_ACTION_ATLAS' ),
@@ -168,7 +169,7 @@ UPDATE EaActions SET TurnsToComplete = 1000 WHERE Type = 'EA_ACTION_TAKE_RESIDEN
 UPDATE EaActions SET TurnsToComplete = 1, StayInvisible = 1 WHERE Type = 'EA_ACTION_HEAL';
 
 --GP yield actions
-INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	NoGPNumLimit,	UIType,		AITarget,			GPClass,		City,		GPModType1,				TurnsToComplete,	ProgressHolder,	IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	NoGPNumLimit,	UIType,		AITarget,			GPClass,		City,		GPModType1,				TurnsToComplete,	ProgressHolder,	IconIndex,	IconAtlas				) VALUES
 ('EA_ACTION_BUILD',						'TXT_KEY_EA_ACTION_BUILD',				'TXT_KEY_EA_ACTION_BUILD_HELP',				1,		1,				'Action',	'OwnClosestCity',	'Engineer',		'Own',		'EAMOD_CONSTRUCTION',	1000,				'Person',		5,			'TECH_ATLAS_1'			),
 ('EA_ACTION_TRADE',						'TXT_KEY_EA_ACTION_TRADE',				'TXT_KEY_EA_ACTION_TRADE_HELP',				1,		1,				'Action',	'OwnClosestCity',	'Merchant',		'Own',		'EAMOD_TRADE',			1000,				'Person',		17,			'TECH_ATLAS_1'			),
 ('EA_ACTION_RESEARCH',					'TXT_KEY_EA_ACTION_RESEARCH',			'TXT_KEY_EA_ACTION_RESEARCH_HELP',			1,		1,				'Action',	'OwnClosestCity',	'Sage',			'Own',		'EAMOD_SCHOLARSHIP',	1000,				'Person',		11,			'BW_ATLAS_1'			),
@@ -180,7 +181,7 @@ UPDATE EaActions SET NotGPClass = 'Devout' WHERE Type = 'EA_ACTION_CHANNEL';
 
 
 --Warrior actions
-INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,		GPClass,		AITarget,		AICombatRole,	GPModType1,				TurnsToComplete,	HumanVisibleFX,	IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,		GPClass,		AITarget,		AICombatRole,	GPModType1,				TurnsToComplete,	HumanVisibleFX,	IconIndex,	IconAtlas		) VALUES
 ('EA_ACTION_LEAD_CHARGE',				'TXT_KEY_EA_ACTION_LEAD_CHARGE',		'TXT_KEY_EA_ACTION_LEAD_CHARGE_HELP',		1,		'Action',	'Warrior',		NULL,			'Any',			'EAMOD_COMBAT',			1,					1,				6,			'BW_ATLAS_1'	),
 ('EA_ACTION_RALLY_TROOPS',				'TXT_KEY_EA_ACTION_RALLY_TROOPS',		'TXT_KEY_EA_ACTION_RALLY_TROOPS_HELP',		1,		'Action',	'Warrior',		NULL,			'Any',			'EAMOD_LEADERSHIP',		1,					1,				33,			'TECH_ATLAS_1'	),
 --('EA_ACTION_FORTIFY_TROOPS',			'TXT_KEY_EA_ACTION_FORTIFY_TROOPS',		'TXT_KEY_EA_ACTION_FORTIFY_TROOPS_HELP',	1,		'Action',	'Warrior',		NULL,			'Any',			'EAMOD_LEADERSHIP',		1,					1,				6,			'BW_ATLAS_1'	),
@@ -189,14 +190,16 @@ INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,
 UPDATE EaActions SET FinishMoves = NULL WHERE Type = 'EA_ACTION_LEAD_CHARGE';
 
 --Misc actions
-INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,		GPClass,		OwnTerritory,	AITarget,		AICombatRole,	GPModType1,				TurnsToComplete,	ProgressHolder,	HumanVisibleFX,	IconIndex,	IconAtlas		) VALUES
-('EA_ACTION_OCCUPY_TOWER',				'TXT_KEY_EA_ACTION_OCCUPY_TOWER',		'TXT_KEY_EA_ACTION_OCCUPY_TOWER_HELP',		1,		'Action',	'Thaumaturge',	1,				'VacantTower',	NULL,			NULL,					3,					'Person',		1,				6,			'BW_ATLAS_1'	),
-('EA_ACTION_OCCUPY_TEMPLE',				'TXT_KEY_EA_ACTION_OCCUPY_TEMPLE',		'TXT_KEY_EA_ACTION_OCCUPY_TEMPLE_HELP',		1,		'Action',	'Devout',		1,				'VacantTemple',	NULL,			NULL,					3,					'Person',		1,				6,			'BW_ATLAS_1'	);
+INSERT INTO EaActions (Type,			Description,							Help,										GPOnly,	UIType,		GPClass,		OwnTerritory,	AITarget,		AICombatRole,	GPModType1,				TurnsToComplete,	ProgressHolder,	HumanVisibleFX,	IconIndex,	IconAtlas					) VALUES
+('EA_ACTION_LEARN_SPELL',				'TXT_KEY_EA_ACTION_LEARN_SPELL',		NULL,										1,		'Action',	'Thaumaturge',	NULL,			'SelfTowerTemple',NULL,			NULL,					NULL,				'Person',		1,				2,			'EXPANSION_SCEN_TECH_ATLAS'	),
+('EA_ACTION_OCCUPY_TOWER',				'TXT_KEY_EA_ACTION_OCCUPY_TOWER',		'TXT_KEY_EA_ACTION_OCCUPY_TOWER_HELP',		1,		'Action',	'Thaumaturge',	1,				'VacantTower',	NULL,			NULL,					3,					'Person',		1,				6,			'BW_ATLAS_1'				),
+('EA_ACTION_OCCUPY_TEMPLE',				'TXT_KEY_EA_ACTION_OCCUPY_TEMPLE',		'TXT_KEY_EA_ACTION_OCCUPY_TEMPLE_HELP',		1,		'Action',	'Devout',		1,				'VacantTemple',	NULL,			NULL,					3,					'Person',		1,				6,			'BW_ATLAS_1'				);
 
+UPDATE EaActions SET OrGPClass = 'Devout', ConsiderTowerTemple = 1, FinishMoves = NULL WHERE Type = 'EA_ACTION_LEARN_SPELL';
 UPDATE EaActions SET NotGPClass = 'Devout' WHERE Type = 'EA_ACTION_OCCUPY_TOWER';
 
 --Prophecies
-INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	UIType,		DoXP,	AITarget,		AIAdHocValue,	GPClass,	City,		UniqueType,	PlayAnywhereSound,					IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	UIType,		DoXP,	AITarget,		AIAdHocValue,	GPClass,	City,		UniqueType,	PlayAnywhereSound,					IconIndex,	IconAtlas							) VALUES
 ('EA_ACTION_PROPHECY_AHURADHATA',		'TXT_KEY_EA_ACTION_PROPHECY_AHURADHATA',	'TXT_KEY_EA_ACTION_PROPHECY_AHURADHATA_HELP',	1,		'Spell',	100,	'OwnCities',	10000,			'Devout',	'Own',		'World',	'AS2D_EVENT_NOTIFICATION_GOOD',		16,			'EXPANSION_UNIT_ATLAS_1'			),
 ('EA_ACTION_PROPHECY_MITHRA',			'TXT_KEY_EA_ACTION_PROPHECY_MITHRA',		'TXT_KEY_EA_ACTION_PROPHECY_MITHRA_HELP',		1,		'Spell',	100,	'OwnCities',	10000,			'Devout',	'Own',		'World',	'AS2D_EVENT_NOTIFICATION_GOOD',		16,			'EXPANSION_UNIT_ATLAS_1'			),
 ('EA_ACTION_PROPHECY_MA',				'TXT_KEY_EA_ACTION_PROPHECY_MA',			'TXT_KEY_EA_ACTION_PROPHECY_MA_HELP',			1,		'Spell',	100,	'OwnCities',	0,				'Devout',	'Own',		'World',	'AS2D_EVENT_NOTIFICATION_GOOD',		16,			'EXPANSION_UNIT_ATLAS_1'			),
@@ -211,7 +214,7 @@ UPDATE EaActions SET ReligionFounded = 'RELIGION_AZZANDARAYASNA', PolicyReq = 'P
 UPDATE EaActions SET DoGainPromotion = 'PROMOTION_PROPHET' WHERE Type GLOB 'EA_ACTION_PROPHECY_*';
 
 --Wonders
-INSERT INTO EaActions (Type,			Description,								GPOnly,	TechReq,					UIType,		FinishXP,	AITarget,			AIAdHocValue,	GPClass,		GPSubclass,	OrGPSubclass,	City,	OwnCityRadius,	ClaimsPlot,	GPModType1,				TurnsToComplete,	ProgressHolder,	BuildType,					ImprovementType,					UniqueType,	EaWonder,						MeetGod,						ReqEaWonder,					ReqNearbyCityReligion,			Building,					BuildingMod,					IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,								GPOnly,	TechReq,					UIType,		FinishXP,	AITarget,			AIAdHocValue,	GPClass,		GPSubclass,	OrGPSubclass,	City,	OwnCityRadius,	ClaimsPlot,	GPModType1,				TurnsToComplete,	ProgressHolder,	BuildType,					ImprovementType,					UniqueType,	EaWonder,						MeetGod,						ReqEaWonder,					ReqNearbyCityReligion,			Building,					BuildingMod,					IconIndex,	IconAtlas					) VALUES
 ('EA_ACTION_KOLOSSOS',					'TXT_KEY_EA_ACTION_KOLOSSOS',				1,		'TECH_BRONZE_WORKING',		'Build',	100,		'OwnCities',		0,				'Engineer',		NULL,		NULL,			'Own',	NULL,			NULL,		'EAMOD_CONSTRUCTION',	25,					'City',			NULL,						NULL,								'World',	'EA_WONDER_KOLOSSOS',			NULL,							NULL,							NULL,							'BUILDING_KOLOSSOS',		'BUILDING_KOLOSSOS_MOD',		4,			'BW_ATLAS_2'				),
 ('EA_ACTION_MEGALOS_FAROS',				'TXT_KEY_EA_ACTION_MEGALOS_FAROS',			1,		'TECH_SAILING',				'Build',	100,		'OwnCities',		0,				'Engineer',		NULL,		NULL,			'Own',	NULL,			NULL,		'EAMOD_CONSTRUCTION',	25,					'City',			NULL,						NULL,								'World',	'EA_WONDER_MEGALOS_FAROS',		NULL,							NULL,							NULL,							'BUILDING_MEGALOS_FAROS',	'BUILDING_MEGALOS_FAROS_MOD',	5,			'BW_ATLAS_2'				),
 ('EA_ACTION_HANGING_GARDENS',			'TXT_KEY_EA_ACTION_HANGING_GARDENS',		1,		'TECH_IRRIGATION',			'Build',	100,		'OwnCities',		0,				'Engineer',		NULL,		NULL,			'Own',	NULL,			NULL,		'EAMOD_CONSTRUCTION',	25,					'City',			NULL,						NULL,								'World',	'EA_WONDER_HANGING_GARDENS',	NULL,							NULL,							NULL,							'BUILDING_HANGING_GARDENS',	'BUILDING_HANGING_GARDENS_MOD',	3,			'BW_ATLAS_2'				),
@@ -287,7 +290,7 @@ UPDATE EaActions SET NotGPClass = 'Devout' WHERE Type = 'EA_ACTION_ARCANE_TOWER'
 UPDATE EaActions SET BuildsTemple = 1, Help = 'TXT_KEY_' || Type || '_HELP' WHERE Type GLOB 'EA_ACTION_TEMPLE_*';
 
 --Epics
-INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	TechReq,				PolicyReq,			UIType,		FinishXP,	AITarget,			AIAdHocValue,	GPClass,	City,		GPModType1,			TurnsToComplete,	ProgressHolder,	UniqueType,	EaEpic,							IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	TechReq,				PolicyReq,			UIType,		FinishXP,	AITarget,			AIAdHocValue,	GPClass,	City,		GPModType1,			TurnsToComplete,	ProgressHolder,	UniqueType,	EaEpic,							IconIndex,	IconAtlas				) VALUES
 ('EA_ACTION_EPIC_VOLUSPA',				'TXT_KEY_EA_ACTION_EPIC_VOLUSPA',			'TXT_KEY_EA_ACTION_EPIC_VOLUSPA_HELP',			1,		NULL,					'POLICY_TRADITION',	'Build',	100,		'OwnClosestCity',	1000,			'Artist',	'Any',		'EAMOD_BARDING',	25,					'Person',		'World',	'EA_EPIC_VOLUSPA',				32,			'BW_ATLAS_2'			),
 ('EA_ACTION_EPIC_HAVAMAL',				'TXT_KEY_EA_ACTION_EPIC_HAVAMAL',			'TXT_KEY_EA_ACTION_EPIC_HAVAMAL_HELP',			1,		NULL,					'POLICY_FOLKLORE',	'Build',	100,		'OwnClosestCity',	1000,			'Artist',	'Any',		'EAMOD_BARDING',	25,					'Person',		'World',	'EA_EPIC_HAVAMAL',				32,			'BW_ATLAS_2'			),
 ('EA_ACTION_EPIC_VAFTHRUTHNISMAL',		'TXT_KEY_EA_ACTION_EPIC_VAFTHRUTHNISMAL',	'TXT_KEY_EA_ACTION_EPIC_VAFTHRUTHNISMAL_HELP',	1,		'TECH_WRITING',			'POLICY_FOLKLORE',	'Build',	100,		'OwnClosestCity',	1000,			'Artist',	'Any',		'EAMOD_BARDING',	25,					'Person',		'World',	'EA_EPIC_VAFTHRUTHNISMAL',		32,			'BW_ATLAS_2'			),
@@ -296,7 +299,7 @@ INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	TechR
 ('EA_ACTION_EPIC_NATIONAL',				'TXT_KEY_EA_ACTION_EPIC_NATIONAL',			'TXT_KEY_EA_ACTION_EPIC_NATIONAL_HELP',			1,		'TECH_LITERATURE',		NULL,				'Build',	100,		'OwnClosestCity',	1000,			'Artist',	'Any',		'EAMOD_BARDING',	25,					'Person',		'National',	NULL,							32,			'BW_ATLAS_2'			);
 
 --Items
-INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	TechReq,					AndTechReq,		BuildingReq,		UIType,		FinishXP,	AITarget,					AIAdHocValue,	GPClass,	City,	GPModType1,				TurnsToComplete,	ProgressHolder,	UniqueType,	EaArtifact,							IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	TechReq,					AndTechReq,		BuildingReq,		UIType,		FinishXP,	AITarget,					AIAdHocValue,	GPClass,	City,	GPModType1,				TurnsToComplete,	ProgressHolder,	UniqueType,	EaArtifact,							IconIndex,	IconAtlas							) VALUES
 ('EA_ACTION_TOME_OF_EQUUS',				'TXT_KEY_EA_ACTION_TOME_OF_EQUUS',			'TXT_KEY_EA_ACTION_TOME_OF_EQUUS_HELP',			1,		'TECH_HORSEBACK_RIDING',	'TECH_WRITING',	'BUILDING_LIBRARY',	'Build',	100,		'OwnClosestLibraryCity',	1000,			'Sage',		'Own',	'EAMOD_SCHOLARSHIP',	25,					'Person',		'World',	'EA_ARTIFACT_TOME_OF_EQUUS',		2,			'EXPANSION_SCEN_TECH_ATLAS'			),
 ('EA_ACTION_TOME_OF_BEASTS',			'TXT_KEY_EA_ACTION_TOME_OF_BEASTS',			'TXT_KEY_EA_ACTION_TOME_OF_BEASTS_HELP',		1,		'TECH_ELEPHANT_TRAINING',	'TECH_WRITING',	'BUILDING_LIBRARY',	'Build',	100,		'OwnClosestLibraryCity',	1000,			'Sage',		'Own',	'EAMOD_SCHOLARSHIP',	25,					'Person',		'World',	'EA_ARTIFACT_TOME_OF_BEASTS',		2,			'EXPANSION_SCEN_TECH_ATLAS'			),
 ('EA_ACTION_TOME_OF_THE_LEVIATHAN',		'TXT_KEY_EA_ACTION_TOME_OF_THE_LEVIATHAN',	'TXT_KEY_EA_ACTION_TOME_OF_THE_LEVIATHAN_HELP',	1,		'TECH_HARPOONS',			'TECH_WRITING',	'BUILDING_LIBRARY',	'Build',	100,		'OwnClosestLibraryCity',	1000,			'Sage',		'Own',	'EAMOD_SCHOLARSHIP',	25,					'Person',		'World',	'EA_ARTIFACT_TOME_OF_THE_LEVIATHAN',2,			'EXPANSION_SCEN_TECH_ATLAS'			),
@@ -308,14 +311,14 @@ INSERT INTO EaActions (Type,			Description,								Help,											GPOnly,	TechR
 ('EA_ACTION_TOME_OF_METALLURGY',		'TXT_KEY_EA_ACTION_TOME_OF_METALLURGY',		'TXT_KEY_EA_ACTION_TOME_OF_METALLURGY_HELP',	1,		'TECH_BRONZE_WORKING',		'TECH_WRITING',	'BUILDING_LIBRARY',	'Build',	100,		'OwnClosestLibraryCity',	1000,			'Sage',		'Own',	'EAMOD_SCHOLARSHIP',	25,					'Person',		'World',	'EA_ARTIFACT_TOME_OF_METALLURGY',	2,			'EXPANSION_SCEN_TECH_ATLAS'			);
 
 --GP non-unique builds
-INSERT INTO EaActions (Type,			Description,							Help,								GPOnly,	UIType,		TechReq,				PolicyReq,				FinishXP,	AITarget,		AISimpleYield,	GPClass,	City,		GPModType1,		TurnsToComplete,	ProgressHolder,	Building,				BuildingMod,			HumanOnlySound,			IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							Help,								GPOnly,	UIType,		TechReq,				PolicyReq,				FinishXP,	AITarget,		AISimpleYield,	GPClass,	City,		GPModType1,		TurnsToComplete,	ProgressHolder,	Building,				BuildingMod,			HumanOnlySound,			IconIndex,	IconAtlas				) VALUES
 ('EA_ACTION_FOUNDRY',					'TXT_KEY_EA_ACTION_FOUNDRY',			'TXT_KEY_EA_ACTION_FOUNDRY_HELP',	1,		'Build',	'TECH_IRON_WORKING',	NULL,					25,			'OwnCities',	3,				'Engineer',	'Own',		NULL,			8,					'City',			'BUILDING_FOUNDRY',		NULL,					'AS2D_BUILD_UNIT',		1,			'NEW_BLDG_ATLAS2_DLC'	),
 ('EA_ACTION_ACADEMY',					'TXT_KEY_EA_ACTION_ACADEMY',			'TXT_KEY_EA_ACTION_ACADEMY_HELP',	1,		'Build',	'TECH_PHILOSOPHY',		NULL,					25,			'OwnCities',	3,				'Sage',		'Own',		NULL,			8,					'City',			'BUILDING_ACADEMY',		NULL,					'AS2D_BUILD_UNIT',		1,			'BW_ATLAS_2'			),
 ('EA_ACTION_FESTIVAL',					'TXT_KEY_EA_ACTION_FESTIVAL',			'TXT_KEY_EA_ACTION_FESTIVAL_HELP',	1,		'Build',	'TECH_CALENDAR',		NULL,					25,			'OwnCities',	3,				'Artist',	'Own',		NULL,			8,					'City',			'BUILDING_FESTIVAL',	NULL,					'AS2D_BUILD_UNIT',		44,			'BW_ATLAS_1'			),
 ('EA_ACTION_TRADE_HOUSE',				'TXT_KEY_EA_ACTION_TRADE_HOUSE',		NULL,								1,		'Build',	NULL,					'POLICY_FREE_MARKETS',	25,			'OwnCities',	0,				'Merchant',	'Own',		'EAMOD_TRADE',	8,					'City',			NULL,					'BUILDING_TRADE_HOUSE',	'AS2D_BUILD_UNIT',		1,			'NEW_BLDG_ATLAS_DLC'	);
 
 --Other GP builds
-INSERT INTO EaActions (Type,			Description,							GPOnly,	UIType,		TechReq,			PolicyReq,				FinishXP,	AITarget,			GPClass,	GPSubclass,		FoundsSpreadsCult,	City,		GPModType1,				TurnsToComplete,	ProgressHolder,	HumanOnlySound,			PlayAnywhereSound,					IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							GPOnly,	UIType,		TechReq,			PolicyReq,				FinishXP,	AITarget,			GPClass,	GPSubclass,		FoundsSpreadsCult,	City,		GPModType1,				TurnsToComplete,	ProgressHolder,	HumanOnlySound,			PlayAnywhereSound,					IconIndex,	IconAtlas					) VALUES
 ('EA_ACTION_LAND_TRADE_ROUTE',			'TXT_KEY_EA_ACTION_LAND_TRADE_ROUTE',	1,		'Action',	'TECH_CURRENCY',	NULL,					25,			'LandTradeCities',	'Merchant',	NULL,			NULL,				'Any',		NULL,					8,					'CityCiv',		'AS2D_BUILD_UNIT',		NULL,								0,			'UNIT_ACTION_ATLAS_TRADE'	),
 ('EA_ACTION_SEA_TRADE_ROUTE',			'TXT_KEY_EA_ACTION_SEA_TRADE_ROUTE',	1,		'Action',	'TECH_SAILING',		NULL,					25,			'SeaTradeCities',	'Merchant',	NULL,			NULL,				'Any',		NULL,					8,					'CityCiv',		'AS2D_BUILD_UNIT',		NULL,								0,			'UNIT_ACTION_ATLAS_TRADE'	),
 ('EA_ACTION_TRADE_MISSION',				'TXT_KEY_EA_ACTION_TRADE_MISSION',		1,		'Action',	NULL,				'POLICY_FREE_TRADE',	100,		'ForeignCapitals',	'Merchant',	NULL,			NULL,				'Foreign',	'EAMOD_TRADE',			25,					'CityCiv',		'AS2D_BUILD_UNIT',		NULL,								17,			'TECH_ATLAS_1'				);
@@ -324,7 +327,7 @@ UPDATE EaActions SET CapitalOnly = 1 WHERE Type = 'EA_ACTION_TRADE_MISSION';
 
 
 --Religious conversion and cult founding
-INSERT INTO EaActions (Type,			Description,							GPOnly,	UIType,		ReligionFounded,			FinishXP,	AITarget,			GPClass,	GPSubclass,		FoundsSpreadsCult,				City,		GPModType1,				TurnsToComplete,	ProgressHolder,	HumanOnlySound,			PlayAnywhereSound,					IconIndex,	IconAtlas) VALUES
+INSERT INTO EaActions (Type,			Description,							GPOnly,	UIType,		ReligionFounded,			FinishXP,	AITarget,			GPClass,	GPSubclass,		FoundsSpreadsCult,				City,		GPModType1,				TurnsToComplete,	ProgressHolder,	HumanOnlySound,			PlayAnywhereSound,					IconIndex,	IconAtlas						) VALUES
 ('EA_ACTION_PROSELYTIZE',				'TXT_KEY_EA_ACTION_PROSELYTIZE',		1,		'Action',	'RELIGION_AZZANDARAYASNA',	25,			'AzzandaraSpread',	'Devout',	'Priest',		NULL,							'Any',		'EAMOD_PROSELYTISM',	8,					'City',			NULL,					'AS2D_EVENT_NOTIFICATION_GOOD',		1,			'EXPANSION_UNIT_ACTION_ATLAS'	),
 ('EA_ACTION_ANTIPROSELYTIZE',			'TXT_KEY_EA_ACTION_PROSELYTIZE',		1,		'Action',	'RELIGION_ANRA',			25,			'AnraSpread',		'Devout',	'FallenPriest',	NULL,							'Any',		'EAMOD_PROSELYTISM',	8,					'City',			NULL,					'AS2D_EVENT_NOTIFICATION_VERY_BAD',	1,			'EXPANSION_UNIT_ACTION_ATLAS'	),
 ('EA_ACTION_RITUAL_LEAVES',				'TXT_KEY_EA_ACTION_RITUAL_LEAVES',		1,		'Spell',	'RELIGION_THE_WEAVE_OF_EA',	25,			'AllCities',		'Devout',	'Druid',		'RELIGION_CULT_OF_LEAVES',		'Any',		'EAMOD_DEVOTION',		8,					'City',			NULL,					'AS2D_EVENT_NOTIFICATION_GOOD',		3,			'EA_RELIGION_ATLAS'				),
@@ -348,8 +351,8 @@ UPDATE EaActions SET OrGPSubclass = 'Eidolon' WHERE Type = 'EA_ACTION_ANTIPROSEL
 
 --Arcane
 INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AITarget,			AICombatRole,	TurnsToComplete,	FixedFaith,	HumanVisibleFX,	IconIndex,	IconAtlas			) VALUES
-('EA_SPELL_SCRYING',					'Arcane',	'EAMOD_DIVINATION',		'TECH_THAUMATURGY',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_SEEING_EYE_GLYPH',			'Arcane',	'EAMOD_DIVINATION',		'TECH_THAUMATURGY',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_SCRYING',					'Arcane',	'EAMOD_DIVINATION',		'TECH_THAUMATURGY',				NULL,	'SelfTowerTemple',	NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_SEEING_EYE_GLYPH',			'Arcane',	'EAMOD_DIVINATION',		'TECH_THAUMATURGY',				'Not',	'SeeingEyeGlyph',	NULL,			2,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_DETECT_GLYPHS_RUNES_WARDS',	'Arcane',	'EAMOD_DIVINATION',		'TECH_THAUMATURGY',				NULL,	'Self',				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_KNOW_WORLD',					'Arcane',	'EAMOD_DIVINATION',		'TECH_COSMOGONY',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_DISPEL_HEXES',				'Arcane',	'EAMOD_ABJURATION',		'TECH_ABJURATION',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
@@ -370,11 +373,11 @@ INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AI
 ('EA_SPELL_POLYMORPH',					'Arcane',	'EAMOD_TRANSMUTATION',	'TECH_TRANSMUTATION',			NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_BLIGHT',						'Arcane',	'EAMOD_TRANSMUTATION',	'TECH_SORCERY',					'Not',	'TowerToWide',		NULL,			3,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_HEX',						'Arcane',	'EAMOD_CONJURATION',	'TECH_MALEFICIUM',				NULL,	NULL,				'Any',			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CONJURE_MONSTER',			'Arcane',	'EAMOD_CONJURATION',	'TECH_CONJURATION',				NULL,	'SelfAndTower',		NULL,			3,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_CONJURE_MONSTER',			'Arcane',	'EAMOD_CONJURATION',	'TECH_CONJURATION',				NULL,	'SelfTowerTemple',	NULL,			3,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_TELEPORT',					'Arcane',	'EAMOD_CONJURATION',	'TECH_CONJURATION',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_PHASE_DOOR',					'Arcane',	'EAMOD_CONJURATION',	'TECH_INVOCATION',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_REANIMATE_DEAD',				'Arcane',	'EAMOD_NECROMANCY',		'TECH_REANIMATION',				NULL,	'SelfAndTower',		NULL,			2,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_RAISE_DEAD',					'Arcane',	'EAMOD_NECROMANCY',		'TECH_NECROMANCY',				NULL,	'SelfAndTower',		NULL,			3,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_REANIMATE_DEAD',				'Arcane',	'EAMOD_NECROMANCY',		'TECH_REANIMATION',				NULL,	'SelfTowerTemple',	NULL,			2,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_RAISE_DEAD',					'Arcane',	'EAMOD_NECROMANCY',		'TECH_NECROMANCY',				NULL,	'SelfTowerTemple',	NULL,			3,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_DEATH_RUNE',					'Arcane',	'EAMOD_NECROMANCY',		'TECH_NECROMANCY',				'Not',	'HomelandProtection',NULL,			2,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_VAMPIRIC_TOUCH',				'Arcane',	'EAMOD_NECROMANCY',		'TECH_NECROMANCY',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_DEATH_STAY',					'Arcane',	'EAMOD_NECROMANCY',		'TECH_NECROMANCY',				NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
@@ -394,12 +397,13 @@ INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AI
 ('EA_SPELL_SIMULACRUM',					'Arcane',	'EAMOD_ILLUSION',		'TECH_GREATER_ILLUSION',		NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_PHANTASMAGORIA',				'Arcane',	'EAMOD_ILLUSION',		'TECH_PHANTASMAGORIA',			NULL,	NULL,				NULL,			1,					0,			1,				0,			'EA_SPELLS_ATLAS'	);
 
+UPDATE EaActions SET FinishMoves = NULL WHERE Type = 'EA_SPELL_SCRYING';
+
 --Both Arcane and Divine
 INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AITarget,			AICombatRole,	FallenAltSpell,					TurnsToComplete,	FixedFaith,	HumanVisibleFX,	IconIndex,	IconAtlas			) VALUES
-('EA_SPELL_SUMMON_ABYSSAL_CREATURES',	'Both',		'EAMOD_CONJURATION',	'TECH_SORCERY',					NULL,	'SelfAndTower',		NULL,			'IsFallen',						3,					0,			1,				1,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_SUMMON_DEMON',				'Both',		'EAMOD_CONJURATION',	'TECH_SUMMONING',				NULL,	'SelfAndTower',		NULL,			'IsFallen',						3,					0,			1,				1,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_SUMMON_ARCHDEMON',			'Both',		'EAMOD_CONJURATION',	'TECH_BREACH',					NULL,	'SelfAndTower',		NULL,			'IsFallen',						15,					0,			1,				1,			'EA_SPELLS_ATLAS'	);
-
+('EA_SPELL_SUMMON_ABYSSAL_CREATURES',	'Both',		'EAMOD_CONJURATION',	'TECH_SORCERY',					NULL,	'SelfTowerTemple',	NULL,			'IsFallen',						3,					0,			1,				1,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_SUMMON_DEMON',				'Both',		'EAMOD_CONJURATION',	'TECH_SUMMONING',				NULL,	'SelfTowerTemple',	NULL,			'IsFallen',						3,					0,			1,				1,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_SUMMON_ARCHDEMON',			'Both',		'EAMOD_CONJURATION',	'TECH_BREACH',					NULL,	'SelfTowerTemple',	NULL,			'IsFallen',						15,					0,			1,				1,			'EA_SPELLS_ATLAS'	);
 
 --Divine
 INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AITarget,			AICombatRole,	FallenAltSpell,					TurnsToComplete,	FixedFaith,	HumanVisibleFX,	IconIndex,	IconAtlas			) VALUES
@@ -414,9 +418,9 @@ INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AI
 ('EA_SPELL_BANISH_UNDEAD',				'Divine',	'EAMOD_ABJURATION',		'TECH_DIVINE_ESSENCE',			NULL,	'Self',				NULL,			'EA_SPELL_TURN_UNDEAD',			2,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_BANISH_DEMONS',				'Divine',	'EAMOD_ABJURATION',		'TECH_DIVINE_ESSENCE',			NULL,	'Self',				NULL,			'EA_SPELL_BANISH_ANGELS',		2,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_CONSECRATE',					'Divine',	'EAMOD_EVOCATION',		'TECH_HEAVENLY_CYCLES',			NULL,	NULL,				NULL,			'EA_SPELL_DESECRATE',			1,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CALL_HEAVENS_GUARD',			'Divine',	'EAMOD_CONJURATION',	'TECH_HEAVENLY_CYCLES',			NULL,	'SelfAndTower',		NULL,			'EA_SPELL_SUMMON_ABYSSAL_CREATURES', 3,				0,			1,				2,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CALL_ANGEL',					'Divine',	'EAMOD_CONJURATION',	'TECH_CELESTIAL_KNOWLEDGE',		NULL,	'SelfAndTower',		NULL,			'EA_SPELL_SUMMON_DEMON',		3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CALL_ARCHANGEL',				'Divine',	'EAMOD_CONJURATION',	'TECH_DIVINE_INTERVENTION',		NULL,	'SelfAndTower',		NULL,			'EA_SPELL_SUMMON_ARCHDEMON',	15,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_CALL_HEAVENS_GUARD',			'Divine',	'EAMOD_CONJURATION',	'TECH_HEAVENLY_CYCLES',			NULL,	'SelfTowerTemple',	NULL,			'EA_SPELL_SUMMON_ABYSSAL_CREATURES', 3,				0,			1,				2,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_CALL_ANGEL',					'Divine',	'EAMOD_CONJURATION',	'TECH_CELESTIAL_KNOWLEDGE',		NULL,	'SelfTowerTemple',	NULL,			'EA_SPELL_SUMMON_DEMON',		3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_CALL_ARCHANGEL',				'Divine',	'EAMOD_CONJURATION',	'TECH_DIVINE_INTERVENTION',		NULL,	'SelfTowerTemple',	NULL,			'EA_SPELL_SUMMON_ARCHDEMON',	15,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
 ('EA_SPELL_RESURRECTION',				'Divine',	'EAMOD_NECROMANCY',		'TECH_DIVINE_INTERVENTION',		NULL,	NULL,				NULL,			'EA_SPELL_GREATER_REANIMATION',	1,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
 
 --fallen
@@ -435,9 +439,9 @@ INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				TechReq,						City,	AI
 --pantheism
 INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				PolicyReq,						City,	AITarget,			AICombatRole,	FallenAltSpell,					TurnsToComplete,	FixedFaith,	HumanVisibleFX,	IconIndex,	IconAtlas			) VALUES
 ('EA_SPELL_EAS_BLESSING',				'Divine',	'EAMOD_TRANSMUTATION',	'POLICY_WOODS_LORE',			'Not',	'NearbyLivTerrain',	NULL,			NULL,							3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CALL_ANIMALS',				'Divine',	'EAMOD_CONJURATION',	'POLICY_FERAL_BOND',			'Not',	'SelfAndTower',		NULL,			NULL,							3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CALL_TREE_ENTS',				'Divine',	'EAMOD_CONJURATION',	'POLICY_FOREST_DOMINION',		'Not',	'SelfAndTower',		NULL,			NULL,							3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
-('EA_SPELL_CALL_MAJOR_SPIRIT',			'Divine',	'EAMOD_CONJURATION',	'POLICY_PANTHEISM_FINISHER',	'Not',	'SelfAndTower',		NULL,			NULL,							15,					0,			1,				2,			'EA_SPELLS_ATLAS'	);
+('EA_SPELL_CALL_ANIMALS',				'Divine',	'EAMOD_CONJURATION',	'POLICY_FERAL_BOND',			'Not',	'SelfTowerTemple',	NULL,			NULL,							3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_CALL_TREE_ENTS',				'Divine',	'EAMOD_CONJURATION',	'POLICY_FOREST_DOMINION',		'Not',	'SelfTowerTemple',	NULL,			NULL,							3,					0,			1,				2,			'EA_SPELLS_ATLAS'	),
+('EA_SPELL_CALL_MAJOR_SPIRIT',			'Divine',	'EAMOD_CONJURATION',	'POLICY_PANTHEISM_FINISHER',	'Not',	'SelfTowerTemple',	NULL,			NULL,							15,					0,			1,				2,			'EA_SPELLS_ATLAS'	);
 
 --druid cult spells (learned from ritual)
 INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				PantheismCult,					City,	AITarget,			AICombatRole,		TurnsToComplete,	FixedFaith,	HumanVisibleFX,	IconIndex,	IconAtlas			) VALUES
@@ -451,7 +455,8 @@ INSERT INTO EaActions (Type,			SpellClass,	GPModType1,				PantheismCult,					Cit
 --Build out the table for dependent strings
 UPDATE EaActions SET Description = 'TXT_KEY_' || Type, Help = 'TXT_KEY_' || Type || '_HELP' WHERE SpellClass IS NOT NULL;
 UPDATE EaActions SET GPOnly = 1, ConsiderTowerTemple = 1, UIType = 'Spell' WHERE SpellClass IS NOT NULL;
-UPDATE EaActions SET ProgressHolder = 'Person' WHERE Type GLOB 'EA_SPELL_*' AND TurnsToComplete > 1;
+UPDATE EaActions SET ProgressHolder = 'Person' WHERE SpellClass IS NOT NULL AND TurnsToComplete > 1;
+
 
 
 UPDATE EaActions SET PolicyTrumpsTechReq = 'POLICY_WITCHCRAFT' WHERE Type IN ('EA_SPELL_SCRYING', 'EA_SPELL_SLOW', 'EA_SPELL_HEX', 'EA_SPELL_DEATH_STAY', 'EA_SPELL_SLEEP');

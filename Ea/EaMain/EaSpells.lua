@@ -180,15 +180,29 @@ local g_tradeAvailableTable = {}
 ---------------------------------------------------------------
 
 local EaActionsInfo = {}			-- Contains the entire table for speed (for ID >= FIRST_SPELL_ID)
-for row in GameInfo.EaActions() do
-	local id = row.ID
+local spellLevel = {}				-- used only for AI valuation in choosing spell to learn
+for eaActionInfo in GameInfo.EaActions() do
+	local id = eaActionInfo.ID
 	if id >= FIRST_SPELL_ID then
-		EaActionsInfo[id] = row
+		EaActionsInfo[id] = eaActionInfo
+		spellLevel[id] = 1
+		if eaActionInfo.TechReq then
+			local techInfo = GameInfo.Technologies[eaActionInfo.TechReq]
+			spellLevel[id] = 0 < techInfo.GridX and techInfo.GridX + 1 or 1
+		elseif eaActionInfo.PolicyReq then
+			local policyInfo = GameInfo.Policies[eaActionInfo.PolicyReq]
+			if policyInfo.PolicyBranchType then
+				spellLevel[id] = 0 < policyInfo.GridY and policyInfo.GridY + 1 or 1
+			elseif string.find(policyInfo.Type, "_FINISHER") then
+				spellLevel[id] = 6
+			end
+		end
 	end
 end
 
 local gpTempTypeUnits = {}	--index by role, originalTypeID; holds tempTypeID
 local firstArchdemonID, firstArchangelID
+local godUnits = {}
 for unitInfo in GameInfo.Units() do
 	if unitInfo.EaGPTempRole then
 		local role = unitInfo.EaGPTempRole
@@ -207,6 +221,13 @@ for unitInfo in GameInfo.Units() do
 			firstArchdemonID = firstArchdemonID or unitInfo.ID
 		elseif unitInfo.EaSpecial == "Archangel" then
 			firstArchangelID = firstArchangelID or unitInfo.ID
+		elseif unitInfo.EaSpecial == "MajorSpirit" then
+			local minorTypeID = GameInfoTypes[string.gsub(unitInfo.Type, "'UNIT_", "MINOR_CIV_")]
+			local iPlayer = gg_minorPlayerByTypeID[minorTypeID]		--nil if not in this game
+			if iPlayer then
+				godUnits[iPlayer] = unitInfo.ID
+				print("iGodPlayer / unit = ", iPlayer, unitInfo.ID)
+			end
 		end
 	end
 end
@@ -754,22 +775,24 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 	end
 
 	if g_bGreatPerson then
-		--Memory for AI specialization
+		--memory for AI specialization
 		if g_eaAction.GPModType1 then
-			local memValue = 2 ^ (g_gameTurn / MOD_MEMORY_HALFLIFE)
-			local modID = GameInfoTypes[g_eaAction.GPModType1]
-			g_eaPerson.modMemory[modID] = (g_eaPerson.modMemory[modID] or 0) + memValue
-			if g_eaAction.GPModType2 then
+			if g_eaAction.GPModType1 ~= "EAMOD_LEADERSHIP" then
+				local memValue = 2 ^ (g_gameTurn / MOD_MEMORY_HALFLIFE)
+				local modID = GameInfoTypes[g_eaAction.GPModType1]
+				g_eaPerson.modMemory[modID] = (g_eaPerson.modMemory[modID] or 0) + memValue
+			end
+			if g_eaAction.GPModType2 and g_eaAction.GPModType2 ~= "EAMOD_LEADERSHIP" then
 				local modID = GameInfoTypes[g_eaAction.GPModType2]
 				g_eaPerson.modMemory[modID] = (g_eaPerson.modMemory[modID] or 0) + memValue
 			end
 		end
-	end
-
-	if g_eaAction.StayInvisible then
-		g_unit:SetInvisibleType(INVISIBLE_SUBMARINE)
-	else 
-		g_unit:SetInvisibleType(-1)
+		--invisibility
+		if g_eaAction.StayInvisible then
+			g_unit:SetInvisibleType(INVISIBLE_SUBMARINE)
+		else 
+			g_unit:SetInvisibleType(-1)
+		end	
 	end
 
 	--effects on unit
@@ -781,7 +804,7 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 	end
 
 	--Finish moves
-	if g_eaAction.FinishMoves then
+	if g_eaAction.FinishMoves and g_unit then
 		g_unit:FinishMoves()
 	end
 
@@ -931,7 +954,7 @@ end
 function TestSpellLearnable(iPlayer, iPerson, spellID, spellClass)		--iPerson = nil to generate civ list; spellClass is optional restriction (used for separate UI panels)
 	
 	if not SetAIValues[spellID] then return false end	--Not really added yet, even if in table
-	
+
 	local spellInfo = EaActionsInfo[spellID]
 	if spellClass and spellClass ~= spellInfo.SpellClass and spellInfo.SpellClass ~= "Both" then return false end
 	--order exclusions by most common first for speed
@@ -981,7 +1004,7 @@ function TestSpellLearnable(iPlayer, iPerson, spellID, spellClass)		--iPerson = 
 		if spellInfo.PromotionReq and not eaPerson.promotions[GameInfoTypes[spellInfo.PromotionReq] ] then return false end
 	end
 	if spellInfo.ReqEaWonder and not gWonders[GameInfoTypes[spellInfo.ReqEaWonder] ] then return false end
-	return true
+	return true, spellLevel[spellID], spellInfo.GPModType1, spellInfo.GPModType2
 end
 
 
@@ -1379,16 +1402,17 @@ Test[GameInfoTypes.EA_SPELL_CALL_MAJOR_SPIRIT] = function()
 	end
 	--must have 500 relationship with god; pick best
 	local bestGodFriendship = 0
-	local iBestGodFriend
+	local bestGodUnitID
 	local calledMajorSpirits = gWorld.calledMajorSpirits
 	for iGod in pairs(gods) do
-		if not calledMajorSpirits[iGod] then		--already called?
+		local godUnitID = godUnits[iGod]
+		if not calledMajorSpirits[godUnitID] then		--already called?
 			local god = Players[iGod]
 			if god:GetAlly() == g_iPlayer then
 				local friendship = god:GetMinorCivFriendshipWithMajor(g_iPlayer)
 				if bestGodFriendship < friendship then
 					bestGodFriendship = friendship
-					iBestGodFriend = iGod
+					bestGodUnitID = godUnitID
 				end
 			end
 		end
@@ -1397,7 +1421,7 @@ Test[GameInfoTypes.EA_SPELL_CALL_MAJOR_SPIRIT] = function()
 		g_testTargetSwitch = 11						--there are none that can be called
 		return false
 	end
-	g_int1 = iBestGodFriend
+	g_int1 = bestGodUnitID
 	print("-g_int1 = ", g_int1, GameInfo.Units[g_int1].Type)
 	return true
 end
@@ -1409,6 +1433,57 @@ Finish[GameInfoTypes.EA_SPELL_CALL_MAJOR_SPIRIT] = ModelSummon_Finish
 ----------------------------------------------------------------------------
 -- Glyphs, Runes and Wards
 ----------------------------------------------------------------------------
+
+--EA_SPELL_SEEING_EYE_GLYPH
+TestTarget[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
+	g_int1, g_int2, g_int3, g_int4 = g_plot:GetPlotEffectData()	--effectID, effectStength, iEffectPlayer, iCaster
+	if g_int1 ~= -1 then
+		if g_int3 == g_iPlayer then
+			g_testTargetSwitch = 2
+			return false			
+		end
+		--need more logic here for overwriteable effects
+		g_testTargetSwitch = 3
+		return false
+	end
+	return true
+end
+
+SetUI[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			MapModData.text = "Inscribe a Seeing Eye Glyph on this plot (will provide visibility to range " .. Floor(g_modSpell / 5) .. ")"
+		elseif g_testTargetSwitch == 2 then
+			MapModData.text = "[COLOR_WARNING_TEXT]Your civilization has already placed a Glyph, Rune or Ward on this plot[ENDCOLOR]"
+		elseif g_testTargetSwitch == 3 then
+			MapModData.text = "[COLOR_WARNING_TEXT]Another civilization has placed a Glyph, Rune or Ward on this plot[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
+	local range = Floor(g_modSpell / 5)
+	local addedVisibility = g_plot:IsVisible(g_iTeam) and 0 or 1
+	for radius = 1, range do
+		for plot in PlotRingIterator(g_plot, radius, 1, false) do
+			if not plot:IsVisible(g_iTeam) and (radius == 1 or g_plot:CanSeePlot(plot, g_iTeam, radius, -1)) then
+				addedVisibility = addedVisibility + 1
+			end
+		end
+	end
+	gg_aiOptionValues.i = addedVisibility / 5
+end
+
+Finish[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
+	g_plot:SetPlotEffectData(GameInfoTypes.EA_PLOTEFFECT_SEEING_EYE_GLYPH, g_modSpell, g_iPlayer, g_iPerson)	--effectID, effectStength, iPlayer, iCaster
+	if g_iPlayer == g_iActivePlayer then
+		UpdatePlotEffectHighlight(g_iPlot, 2)
+	else
+		UpdatePlotEffectHighlight(g_iPlot)
+	end
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, g_modSpellTimesTurns)
+	return true
+end
 
 --EA_SPELL_EXPLOSIVE_RUNE
 TestTarget[GameInfoTypes.EA_SPELL_EXPLOSIVE_RUNE] = function()
@@ -1988,11 +2063,74 @@ Finish[GameInfoTypes.EA_SPELL_BANISH_ANGELS] = function()
 	return true
 end
 
-
-
-
 --EA_SPELL_SCRYING
---EA_SPELL_SEEING_EYE_GLYPH
+TestTarget[GameInfoTypes.EA_SPELL_SCRYING] = function()
+	--pre-select best scry plot and value for AI (AI mostly wants to explore with this spell)
+	local maxValue = 0
+	for radius = 2, g_modSpell do
+		for plot in PlotRingIterator(g_gpPlot, radius, 1, false) do
+			if plot:IsRevealed(g_iTeam) then
+				local value = 0
+				for adjPlot in AdjacentPlotIterator(plot) do
+					if not adjPlot:IsRevealed(g_iTeam) then
+						value = value + 1					
+					elseif not adjPlot:IsVisible(g_iTeam) then
+						value = value + 0.1
+					end
+				end
+				if 0 < value then
+					if plot:IsWater() then
+						value = value * 0.6
+					else
+						value = value * plot:SeeThroughLevel(false)	--SeeThroughLevel same as SeeFromLevel without recon complication (1 flat; 2 hill; 3 mountain)
+					end
+					if maxValue < value then
+						maxValue = value
+						g_obj1 = plot
+					end 
+				end
+			end
+		end
+	end
+	if maxValue == 0 then return false end
+	g_value = maxValue
+	return true
+end
+
+SetUI[GameInfoTypes.EA_SPELL_SCRYING] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			if g_unit:GetReconPlot() then
+				MapModData.text = "Create visibility from any revealed plot up to range " .. g_modSpell .. " (will cancel existing Scry)"
+			else
+				MapModData.text = "Create visibility from any revealed plot up to range " .. g_modSpell
+			end
+		else
+			MapModData.text = "[COLOR_WARNING_TEXT]You cannot extend your current visibility with this spell[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_SPELL_SCRYING] = function()
+	gg_aiOptionValues.i = g_value
+end
+
+Do[GameInfoTypes.EA_SPELL_SCRYING] = function()
+	--if g_bAIControl then	--do it
+		g_unit:SetReconPlot(g_obj1)
+		g_unit:FinishMoves()
+	--elseif g_iPlayer == g_iActivePlayer then
+	--	MapModData.forcedUnitSelection = g_iUnit
+	--	MapModData.forcedInterfaceMode = InterfaceModeTypes.INTERFACEMODE_SELECTION
+	--	UI.SelectUnit(g_iUnit)
+	--	UI.LookAtSelectionPlot(0)
+	--end
+
+	return true
+end
+
+
+
 --EA_SPELL_KNOW_WORLD
 --EA_SPELL_DISPEL_HEXES
 

@@ -82,6 +82,7 @@ local SetAIValues = {}
 local Do = {}
 local Interrupt = {}
 local Finish = {}
+local Turns = {}	--only tested if TurnsToComplete == nil
 
 --file control
 --	All applicable are calculated in TestEaAction any time we are in this file. Never change anywhere else!
@@ -124,6 +125,8 @@ local g_specialEffectsPlot			--same as g_plot unless changed in specific functio
 local g_iOwner
 local g_x
 local g_y
+
+local g_bInTowerOrTemple			--set only if g_eaAction.ConsiderTowerTemple
 
 local g_bIsCity		--if true then the following values are always calculated (follows target g_x, g_y if provided; otherwise g_unit g_x,g_y)
 local g_iCity
@@ -218,15 +221,10 @@ function RegisterGPActions(iPerson)
 	local number = 1
 	for id = FIRST_GP_ACTION, FIRST_SPELL_ID - 1 do
 		local eaAction = EaActionsInfo[id]
-		--print(eaAction.Type)
 		if not eaAction.GPSubclass or eaAction.GPSubclass == subclass then
-			--print("-pass subclass")
-			if not eaAction.GPClass or eaAction.GPClass == class1 or eaAction.GPClass == class2 then
-				--print("-pass class")
+			if not eaAction.GPClass or eaAction.GPClass == class1 or eaAction.GPClass == class2 or (eaAction.OrGPClass and (eaAction.OrGPClass == class1 or eaAction.OrGPClass == class2)) then
 				if not eaAction.ExcludeGPSubclass or eaAction.ExcludeGPSubclass ~= subclass then
-					--print("-pass subclass exclude")
 					if not eaAction.NotGPClass or (eaAction.NotGPClass ~= class1 and eaAction.NotGPClass ~= class1) then
-						--print("-pass class exclude")
 						actions[number] = id
 						number = number + 1
 					end
@@ -346,8 +344,18 @@ local function FinishEaAction(eaActionID)		--only called from DoEaAction so file
 		--	g_eaPerson.cult = cultID
 			local freeSpellType = GameInfo.Religions[cultID].EaFreeCultSpell
 			if freeSpellType then
-				--g_eaPerson.spells[GameInfoTypes[freeSpellType] ] = true
-				g_eaPerson.spells[#g_eaPerson.spells + 1] = GameInfoTypes[freeSpellType]
+				local spells = g_eaPerson.spells
+				local numSpells = #spells
+				local bLearnFreeSpell = true
+				for i = 1, #numSpells do
+					if spells[i] == spellID then	--already known
+						bLearnFreeSpell = false
+						break
+					end	
+				end
+				if bLearnFreeSpell then
+					spells[#numSpells + 1] = GameInfoTypes[freeSpellType]
+				end
 			end
 		--end
 		if gReligions[cultID] then		--already founded
@@ -681,17 +689,11 @@ function TestEaAction(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTa
 	if g_bGreatPerson then
 		--all tests here are now in RegisterGPActions 
 		g_subclass = g_eaPerson.subclass
-		--if g_eaAction.GPSubclass and g_eaAction.GPSubclass ~= g_subclass and g_eaAction.OrGPSubclass ~= g_subclass then return false end
-		--if g_eaAction.ExcludeGPSubclass and g_eaAction.ExcludeGPSubclass == g_subclass then return false end
 		g_class1 = g_eaPerson.class1
 		g_class2 = g_eaPerson.class2	--nil unless dual-class GP
-		--if g_eaAction.GPClass and g_eaAction.GPClass ~= g_class1 and g_eaAction.GPClass ~= g_class2 then return false end
-		--if g_eaAction.NotGPClass and (g_eaAction.NotGPClass == g_class1 or g_eaAction.NotGPClass == g_class2) then return false end
 	elseif g_eaAction.GPOnly then
 		return false
 	end
-
-	--print("pass f")
 
 	--Unique already created or being created			TEST THIS!!!
 	if g_bGreatPerson and g_eaAction.UniqueType then		--built or someone else building
@@ -906,8 +908,31 @@ function TestEaActionTarget(eaActionID, testX, testY, bAITargetTest)
 
 	--print("pass r")
 
+	--Tower/Temple test (stripped down version of EaSpells test used only for Learn Spell now)
+	if g_eaAction.ConsiderTowerTemple then
+		if gWonders[EA_WONDER_ARCANE_TOWER][g_iPerson] then		--has tower
+			if gWonders[EA_WONDER_ARCANE_TOWER][g_iPerson].iPlot == g_iPlot then	--in tower
+				g_bInTowerOrTemple = true
+			else	--not in tower
+				if g_eaAction.TowerTempleOnly then return false end
+				g_bInTowerOrTemple = false
+			end
+		elseif g_eaPerson.templeID and gWonders[g_eaPerson.templeID].iPlot == g_iPlot then		--has temple and is in it
+			g_bInTowerOrTemple = true
+		else	
+			if g_eaAction.TowerTempleOnly then return false end
+			g_bInTowerOrTemple = false
+		end
+	else
+		g_bInTowerOrTemple = false
+	end
+
 	--Caluculate turns to complete
 	local turnsToComplete = g_eaAction.TurnsToComplete
+	if not turnsToComplete then
+		turnsToComplete = Turns[eaActionID]()
+		g_eaPerson.turnsToComplete = turnsToComplete
+	end
 
 	if turnsToComplete == 1000 and g_bAIControl then turnsToComplete = 8 end	--AI will wake up and test other options
 	if turnsToComplete > 1 and turnsToComplete ~= 1000 then
@@ -985,16 +1010,19 @@ function DoEaAction(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 	end
 
 	if g_bGreatPerson then
-		--Memory for AI specialization
+		--memory for AI specialization
 		if g_eaAction.GPModType1 then
-			local memValue = 2 ^ (g_gameTurn / MOD_MEMORY_HALFLIFE)
-			local modID = GameInfoTypes[g_eaAction.GPModType1]
-			g_eaPerson.modMemory[modID] = (g_eaPerson.modMemory[modID] or 0) + memValue
-			if g_eaAction.GPModType2 then
+			if g_eaAction.GPModType1 ~= "EAMOD_LEADERSHIP" then
+				local memValue = 2 ^ (g_gameTurn / MOD_MEMORY_HALFLIFE)
+				local modID = GameInfoTypes[g_eaAction.GPModType1]
+				g_eaPerson.modMemory[modID] = (g_eaPerson.modMemory[modID] or 0) + memValue
+			end
+			if g_eaAction.GPModType2 and g_eaAction.GPModType2 ~= "EAMOD_LEADERSHIP" then
 				local modID = GameInfoTypes[g_eaAction.GPModType2]
 				g_eaPerson.modMemory[modID] = (g_eaPerson.modMemory[modID] or 0) + memValue
 			end
 		end
+		--invisibility
 		if g_eaAction.StayInvisible then
 			g_unit:SetInvisibleType(INVISIBLE_SUBMARINE)
 		else 
@@ -1034,6 +1062,10 @@ function DoEaAction(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 
 	--Ongoing actions with turnsToComplete > 0 (DoEaAction is called each turn of construction)
 	local turnsToComplete = g_eaAction.TurnsToComplete
+	if not turnsToComplete then
+		turnsToComplete = Turns[eaActionID]()
+		g_eaPerson.turnsToComplete = turnsToComplete
+	end
 	
 	--Reserve this action at this plot (will cause TestEaActionTarget fail for other GPs)
 	if 1 < turnsToComplete and not g_eaAction.NoGPNumLimit then
@@ -1286,12 +1318,15 @@ function DoGotoPlot(iPlayer, unit, iPerson, gotoX, gotoY)
 		eaPerson.eaActionID = 0
 
 		local gotoEaAction = EaActionsInfo[eaPerson.gotoEaActionID]
-		if gotoEaAction then	--AI has decided it is worth moving to do some action
+		if gotoEaAction then
+			--modMemory (AI has decided it is worth moving to do some action)
 			if gotoEaAction.GPModType1 then
-				local memValue = 2 ^ (g_gameTurn / MOD_MEMORY_HALFLIFE)
-				local modID = GameInfoTypes[gotoEaAction.GPModType1]
-				eaPerson.modMemory[modID] = (eaPerson.modMemory[modID] or 0) + memValue
-				if gotoEaAction.GPModType2 then
+				if gotoEaAction.GPModType1 ~= "EAMOD_LEADERSHIP" then
+					local memValue = 2 ^ (g_gameTurn / MOD_MEMORY_HALFLIFE)
+					local modID = GameInfoTypes[gotoEaAction.GPModType1]
+					eaPerson.modMemory[modID] = (eaPerson.modMemory[modID] or 0) + memValue
+				end
+				if gotoEaAction.GPModType2 and gotoEaAction.GPModType2 ~= "EAMOD_LEADERSHIP" then
 					local modID = GameInfoTypes[gotoEaAction.GPModType2]
 					eaPerson.modMemory[modID] = (eaPerson.modMemory[modID] or 0) + memValue
 				end
@@ -2139,6 +2174,84 @@ end
 ------------------------------------------------------------------------------------------------------------------------------
 -- Misc Actions
 ------------------------------------------------------------------------------------------------------------------------------
+
+--EA_ACTION_LEARN_SPELL
+Test[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
+	if g_eaPerson.learningSpellID ~= -1 then return true end	--learning one now; don't retest
+
+	--any currently learnable by caster? (pick one and value for AI)
+	g_count = 0
+	local bestSpell, bestValue = -1, 0
+	local TestSpellLearnable = TestSpellLearnable
+	for spellID = FIRST_SPELL_ID, LAST_SPELL_ID do
+		local bLearnable, spellLevel, modType1, modType12 = TestSpellLearnable(g_iPlayer, g_iPerson, spellID, nil)
+		if bLearnable then
+			g_count = g_count + 1
+			local mod = GetGPMod(g_iPerson, modType1, modType12)	--value by what caster is good at
+			local value = mod * (spellLevel + 2) ^ 2		
+			if bestValue < value then
+				bestValue = value
+				bestSpell = spellID
+			end
+		end
+	end
+	if bestValue == 0 then return false end
+	g_int1 = bestSpell
+	g_value = 0.1 * bestValue / (#g_eaPerson.spells + 0.1)
+	return true
+end
+
+Turns[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
+	return g_bInTowerOrTemple and 4 or 8
+end
+
+SetUI[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
+	if g_eaPerson.learningSpellID == -1 then
+		if g_bInTowerOrTemple then
+			MapModData.text = "Learn a new spell"
+		else
+			MapModData.text = "Learn a new spell (learn twice as fast in the caster's Tower or Temple!)"
+		end
+	else
+		local spellName = Locale.Lookup(GameInfo.EaActions[g_eaPerson.learningSpellID].Description)
+		MapModData.text = "Continue learning " .. spellName
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
+	gg_aiOptionValues.i = g_value
+end
+
+Do[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
+	if g_eaPerson.learningSpellID == -1 then	--this must be initial turn of action so we need to pick a spell
+		if g_iPlayer == g_iActivePlayer then	--human, pass it off to UI
+			LuaEvents.LearnSpellPopup(g_iPerson)
+			return true
+		else									--AI, set best spell
+			g_eaPerson.learningSpellID = g_int1
+		end
+	end
+	g_unit:FinishMoves()
+	return true
+end
+
+Finish[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
+	if g_eaPerson.learningSpellID == -1 then
+		error("What spell was being learned?")
+	end
+	g_eaPerson.spells[#g_eaPerson.spells + 1] = g_eaPerson.learningSpellID
+	print("GP learned a spell: ", GameInfo.EaActions[g_eaPerson.learningSpellID].Type)
+	g_eaPerson.learningSpellID = -1
+	g_unit:FinishMoves()
+end
+
+Interrupt[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function(iPlayer, iPerson)
+	local eaPerson = gPeople[iPerson]
+	eaPerson.learningSpellID = -1
+	local progressTable = eaPerson.progress
+	progressTable[GameInfoTypes.EA_ACTION_LEARN_SPELL] = nil
+end
+
 --EA_ACTION_OCCUPY_TOWER
 Test[GameInfoTypes.EA_ACTION_OCCUPY_TOWER] = function()
 	if g_eaPerson.bHasTower then return false end
@@ -2746,6 +2859,10 @@ SetUI[GameInfoTypes.EA_ACTION_EPIC_GRIMNISMAL] = function()
 	if g_bAllTestsPassed then
 		MapModData.text = "Increases leader effects by " .. g_mod .. "%"
 	end
+end
+
+Finish[GameInfoTypes.EA_ACTION_EPIC_GRIMNISMAL] = function()
+	ResetPlayerGPMods(g_iPlayer)
 end
 
 --EA_ACTION_EPIC_HYMISKVITHA
