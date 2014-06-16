@@ -302,12 +302,6 @@
     <ModContent>
       <Content>
         <Type>InGameUIAddin</Type>
-        <Name>EaMain</Name>
-        <Description>EaMain</Description>
-        <FileName>EaMain/EaMain.lua</FileName>
-      </Content>
-      <Content>
-        <Type>InGameUIAddin</Type>
         <Name>EaErrorPopup</Name>
         <Description>EaErrorPopup</Description>
         <FileName>EaUI/EaErrorPopup.lua</FileName>
@@ -462,10 +456,6 @@
     <Content Include="CoreTables\ArtDefinesLandmarks.sql">
       <SubType>Lua</SubType>
       <ImportIntoVFS>False</ImportIntoVFS>
-    </Content>
-    <Content Include="CvGameCore_Ea.pdb">
-      <SubType>Lua</SubType>
-      <ImportIntoVFS>True</ImportIntoVFS>
     </Content>
     <Content Include="Scratch\WTI_B.fxsxml">
       <SubType>Lua</SubType>
@@ -1409,7 +1399,7 @@
     </Content>
     <Content Include="EaMain\EaMain.lua">
       <SubType>Lua</SubType>
-      <ImportIntoVFS>False</ImportIntoVFS>
+      <ImportIntoVFS>True</ImportIntoVFS>
     </Content>
     <Content Include="EaMain\EaPeople.lua">
       <SubType>Lua</SubType>
