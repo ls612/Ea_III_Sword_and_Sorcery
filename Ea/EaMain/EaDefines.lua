@@ -5,6 +5,12 @@
 
 print("Loading EaDefines.lua...")
 
+--clear out MapModData in case this is a reload or map regeneration
+for k, v in pairs(MapModData) do
+	print("Clearing MapModData from map regenertion or in-game load ", k, v)
+	MapModData[k] = nil
+end
+
 --------------------------------------------------------------
 -- Debug
 --------------------------------------------------------------
@@ -20,7 +26,7 @@ MapModData.bDisableEnabledPolicies = true
 -- Settings
 --------------------------------------------------------------
 
-UNADJUSTED_STARTING_SUM_OF_ALL_MANA = 100000
+UNADJUSTED_STARTING_SUM_OF_ALL_MANA = 300000
 MOD_MEMORY_HALFLIFE = 30	--What AI is doing now is twice as important as this many turns ago
 
 --------------------------------------------------------------
@@ -315,7 +321,8 @@ gWorld = {	sumOfAllMana =				MapModData.STARTING_SUM_OF_ALL_MANA,
 			anraConvertNum =			0,
 			weaveConvertNum =			0,
 			livingTerrainConvertStr =	0,
-			calledMajorSpirits =		{}
+			calledMajorSpirits =		{},
+			panCivsEver =				0
 			}
 
 

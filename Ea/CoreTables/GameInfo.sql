@@ -40,6 +40,9 @@ UPDATE HandicapInfos SET HappinessDefault = HappinessDefault - 4;	--more luxurie
 
 UPDATE HandicapInfos SET ProductionFreeUnits = 15, ProductionFreeUnitsPopulationPercent = 50, ProductionFreeUnitsPerCity = 0;	--no scaling in base at Prince and above, so didn't bother here
 
+--UnitCostPercent, AIUnitCostPercent
+
+--Note: InflationPercent and AIInflationPercent are disabled in dll
 
 DELETE FROM HandicapInfo_FreeTechs;		--empty in base
 DELETE FROM HandicapInfo_AIFreeTechs;

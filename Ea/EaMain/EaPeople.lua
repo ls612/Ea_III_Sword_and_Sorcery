@@ -216,7 +216,13 @@ function EaPeopleInit(bNewGame)
 	for iPerson, eaPerson in pairs(gPeople) do
 		local eaPersonRowID = eaPerson.eaPersonRowID
 		if eaPersonRowID then
-			gg_peopleEverLivedByRowID[eaPersonRowID] = iPerson
+			gg_peopleEverLivedByRowID[eaPersonRowID] = true
+		end
+	end
+	for _, eaPerson in pairs(gDeadPeople) do
+		local eaPersonRowID = eaPerson.eaPersonRowID
+		if eaPersonRowID then
+			gg_peopleEverLivedByRowID[eaPersonRowID] = true
 		end
 	end
 end
@@ -273,7 +279,23 @@ function PeoplePerCivTurn(iPlayer)
 			end
 
 			--Death by old age
-			local bDieOfOldAge = eaPerson.predestinedAgeOfDeath and eaPerson.predestinedAgeOfDeath < age	--predestined thwarts game reload
+			local bDieOfOldAge = false
+			if eaPerson.predestinedAgeOfDeath and eaPerson.predestinedAgeOfDeath <= age then	--predestined thwarts game reload
+				if eaPerson.eaActionID == -1 or eaPerson.eaActionID == 0 then
+					bDieOfOldAge = true
+				elseif not eaPerson.deathStayAction then
+					local eaActionInfo = GameInfo.EaActions[eaPerson.eaActionID]
+					local bDeathStay = eaActionInfo.TurnsToComplete ~= 1000		--sustained action
+					if bDeathStay then
+						eaPerson.deathStayAction = eaPerson.eaActionID
+					else
+						bDieOfOldAge = true
+					end
+				elseif eaPerson.deathStayAction ~= eaPerson.eaActionID then	--swapped to different action
+					bDieOfOldAge = true
+				end
+				--lives as long as eaPerson.deathStayAction == eaPerson.eaActionID
+			end
 
 			if bDieOfOldAge then
 				KillPerson(iPlayer, iPerson, unit, nil, "OldAge")
@@ -333,7 +355,7 @@ function PeoplePerCivTurn(iPlayer)
 				if eaPerson.iUnit ~= -1 and not bHumanPlayer then
 					unit = player:GetUnitByID(eaPerson.iUnit)
 					local debugLoopCount = 0
-					while unit and unit:GetMoves() > 0 do					--repeat call since not all actions use movement or all movement
+					while unit and unit:GetMoves() > 0 and not unit:IsDead() and not unit:IsDelayedDeath() do					--repeat call since not all actions use movement or all movement
 
 						unit = AIGPDoSomething(iPlayer, iPerson, unit)		--this function returns unit (if still on map) or nil
 						print("after AIGPDoSomething from EaPeople", unit, unit and unit:GetMoves())
@@ -378,17 +400,16 @@ Events.ActivePlayerTurnStart.Add(SkipPeople)
 --TO DO: This could be done much better with new turn blocking types in dll
 
 
-local bLastCallWasHumanPlayer = false
+local g_iLastPlayerPeopleAfterTurn = -1
 
 function PeopleAfterTurn(iPlayer, bActionInfoPanelCall)
-	--Runs from ActionInfoPanel for human and after turn for AI and human
-	print("Running PeopleAfterTurn ", bActionInfoPanelCall, bLastCallWasHumanPlayer)
+	--Runs from ActionInfoPanel for human, and after turn for AI and human
+	print("Running PeopleAfterTurn ", iPlayer, bActionInfoPanelCall, g_iLastPlayerPeopleAfterTurn)
 	local bHumanPlayer = not bFullCivAI[iPlayer]
 	local bAllowHumanPlayerEndTurn = true	
 	local gameTurn = Game.GetGameTurn()
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]				
-	local deadCount = 0
 
 	for iPerson, eaPerson in pairs(gPeople) do
 		if eaPerson.iPlayer == iPlayer then
@@ -397,40 +418,39 @@ function PeopleAfterTurn(iPlayer, bActionInfoPanelCall)
 			if not unit then
 				print("!!!! ERROR: No unit for GP; killing person")
 				KillPerson(iPlayer, iPerson, nil, nil, nil)
-				--error("No unit for GP")
 			else
-				if bHumanPlayer and not bLastCallWasHumanPlayer then	--Human actions run automatically at turn end so that player can interupt
+				if bHumanPlayer and iPlayer ~= g_iLastPlayerPeopleAfterTurn then	--Human actions run automatically at turn end so that player can interupt
 					if unit:GetMoves() > 0 then
 						local eaActionID = eaPerson.eaActionID
 						if eaActionID ~= -1 then
 							if eaActionID < FIRST_SPELL_ID then
-								if not DoEaAction(eaActionID, iPlayer, unit, iPerson) then	--does action or cancels
-									bAllowHumanPlayerEndTurn = false
-								end
+								DoEaAction(eaActionID, iPlayer, unit, iPerson)
 							else
-								if not DoEaSpell(eaActionID, iPlayer, unit, iPerson) then
-									bAllowHumanPlayerEndTurn = false
-								end
+								DoEaSpell(eaActionID, iPlayer, unit, iPerson)
 							end
-						else
+							if unit and unit:GetMoves() > 0 and not unit:IsDelayedDeath() and not unit:IsDead() then
+								print("PeopleAfterTurn blocking human end turn (if it's not too late) for GP with movement", eaActionID, iPlayer, iPerson)
+								bAllowHumanPlayerEndTurn = false
+							end
+						--else
 							--clear whatever this unit thought it was doing (including skip)
-							unit:PopMission()
-							bAllowHumanPlayerEndTurn = false
+						--	print("GP with moves and eaActionID = -1 at PeopleAfterTurn; blocking human end turn", iPerson)
+						--	unit:PopMission()
+						--	bAllowHumanPlayerEndTurn = false
 						end
 					end
-
 				end
 			end
 		end
 	end
 
-	bLastCallWasHumanPlayer = bHumanPlayer
+	g_iLastPlayerPeopleAfterTurn = iPlayer
 
 	if bActionInfoPanelCall and bAllowHumanPlayerEndTurn then
-		print("About to issue Game.DoControl(GameInfoTypes.CONTROL_ENDTURN)")
+		print("PeopleAfterTurn issuing Game.DoControl(GameInfoTypes.CONTROL_ENDTURN)")
 		Game.DoControl(GameInfoTypes.CONTROL_ENDTURN)
 	end
-	print("End of PeapleAfterTurn")
+	print("End of PeopleAfterTurn")
 end
 --LuaEvents.EaPeoplePeopleAfterTurn.Add(PeopleAfterTurn)
 LuaEvents.EaPeoplePeopleAfterTurn.Add(function(iPlayer, bActionInfoPanelCall) return HandleError21(PeopleAfterTurn, iPlayer, bActionInfoPanelCall) end)
@@ -494,14 +514,14 @@ function GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, bAsLeader,
 							class2 = class2,
 							race = eaPlayer.race,		--takes civ race here; may change when ungenerisized (e.g., Heldeofol takes a subrace)
 							birthYear = Game.GetGameTurn() - 20,
-							progress = {},
-							disappearTurn = -1,		
-							--promotions = {},			--DEPRECIATED: get from unit
+							disappearTurn = -1,	
 							eaActionID = -1,
 							eaActionData = -1,
 							gotoPlotIndex = -1,
 							gotoEaActionID = -1,
-							moves = 0,
+							moves = 0,	
+							promotions = {},
+							progress = {},
 							modMemory = {}	}		
 		
 		gPeople[iPerson] = eaPerson
@@ -564,24 +584,23 @@ end
 --LuaEvents.EaPeopleGenerateGreatPerson.Add(GenerateGreatPerson)
 
 
-function UpdateGreatPersonStatsFromUnit(unit, eaPerson)		--DEPRECIATE THIS !!!!
-
-
+function UpdateGreatPersonStatsFromUnit(unit, eaPerson)		--info we may need if unit dies (or for quick access without dll test)
 	eaPerson.x = unit:GetX()
 	eaPerson.y = unit:GetY()
-	--eaPerson.direction = unit:GetFacingDirection()
-	--eaPerson.moves = unit:GetMoves()
 	eaPerson.level = unit:GetLevel()
-	--eaPerson.xp = unit:GetExperience()
+	eaPerson.xp = unit:GetExperience()
 
-	--local promotions = eaPerson.promotions
-	--for promotionID = 0, HIGHEST_PROMOTION_ID do
-	--	if unit:IsHasPromotion(promotionID) then
-	--		promotions[promotionID] = true
-	--	else
-	--		promotions[promotionID] = nil
-	--	end
-	--end 
+	--v4 hotfix c patch for save compatibility; TO DO: Remove
+	eaPerson.promotions = eaPerson.promotions or {}
+
+	local promotions = eaPerson.promotions
+	for promotionID = 0, HIGHEST_PROMOTION_ID do
+		if unit:IsHasPromotion(promotionID) then
+			promotions[promotionID] = true
+		else
+			promotions[promotionID] = nil
+		end
+	end 
 end
 
 
@@ -686,14 +705,12 @@ function UngenericizePerson(iPlayer, iPerson, eaPersonRowID)
 	eaPersonRowID = eaPersonRowID or PickPersonRowByClassOrSubclass(iPlayer, eaPerson.subclass or eaPerson.class1)
 
 	if eaPersonRowID then
-		gg_peopleEverLivedByRowID[eaPersonRowID] = iPerson
+		gg_peopleEverLivedByRowID[eaPersonRowID] = true
 		local eaPersonRow = GameInfo.EaPeople[eaPersonRowID]
 		eaPerson.race = GameInfoTypes[eaPersonRow.Race]
 		local name = eaPersonRow.Description
 		eaPerson.name = name
 		eaPerson.eaPersonRowID = eaPersonRowID	--need this for portrait and AI personality (if becomes leader)
-		--local eaPortraitType = string.gsub(eaPersonRow.Type, "EAPERSON", "EAPORTRAIT")
-		--eaPerson.portrait = GameInfo.EaPortraits[eaPortraitType] and GameInfo.EaPortraits[eaPortraitType].File
 		local iUnit = eaPerson.iUnit
 		if iUnit ~= -1 then	--name unit if on map
 			local player = Players[iPlayer]
@@ -1270,22 +1287,52 @@ function KillPerson(iPlayer, iPerson, unit, iKillerPlayer, deathType)
 
 
 	
-	--move person info over to gDeadPeople
+	--move person info we may want over to gDeadPeople; keep: eaPersonRowID, subclass, class1, class1, name, level
 	eaPerson.deathTurn = Game.GetGameTurn()
-	--keep: eaPersonRowID, subclass, class1, class1, name, level
-
 	eaPerson.iUnit = nil
 	eaPerson.iUnitJoined = nil
-	--eaPerson.progress = nil
-
-	--eaPerson.moves = nil
-	--eaPerson.xp = nil
+	eaPerson.progress = nil
 	eaPerson.eaActionID = nil
 	eaPerson.eaActionData = nil
 	eaPerson.gotoPlotIndex = nil
 	eaPerson.gotoEaActionID = nil
 
-	gDeadPeople[#gDeadPeople + 1] = eaPerson
+	--creat dead person table and transfer data we may need later (not table pointers! they break TableSaverLoader!)
+	local eaDeadPerson = {}
+	eaDeadPerson.deathTurn = Game.GetGameTurn()
+	eaDeadPerson.unitTypeID = eaPerson.unitTypeID
+	eaDeadPerson.subclass = eaPerson.subclass
+	eaDeadPerson.class1 = eaPerson.class1
+	eaDeadPerson.class2 = eaPerson.class2
+	eaDeadPerson.race = eaPerson.race
+	eaDeadPerson.birthYear = eaPerson.birthYear
+	eaDeadPerson.modMemory = {}
+	for k, v in pairs(eaPerson.modMemory) do
+		eaDeadPerson.modMemory[k] = v
+	end
+	
+	eaDeadPerson.x = eaPerson.x			--maybe we want to know where they died?
+	eaDeadPerson.y = eaPerson.y
+	eaDeadPerson.level = eaPerson.level
+
+	--spells
+	if eaPerson.spells then
+		eaDeadPerson.spells = {}
+		for k, v in pairs(eaPerson.spells) do
+			eaDeadPerson.spells[k] = v
+		end
+	end
+
+	--promotions; TO DO: Can remove if test after next version (v5) - only needed for save compatibility
+	if eaPerson.promotions then
+		eaDeadPerson.promotions = {}
+		for k, v in pairs(eaPerson.promotions) do
+			eaDeadPerson.promotions[k] = v
+		end
+	end
+
+
+	gDeadPeople[#gDeadPeople + 1] = eaDeadPerson
 	gPeople[iPerson] = nil
 
 	print("finished KillPerson")

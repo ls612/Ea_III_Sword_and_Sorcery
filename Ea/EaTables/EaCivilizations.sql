@@ -69,12 +69,12 @@ CREATE TABLE EaCivs (	'ID' INTEGER PRIMARY KEY AUTOINCREMENT,
 INSERT INTO EaCivs (Type,	PopupImage,									DefaultPlayerColor,			KnownTech,					FavoredGPClass,	GainPolicy,						GainCapitalBuilding) VALUES
 ('EACIV_HIPPUS',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_CHINA',		'TECH_HORSEBACK_RIDING',	'Merchant',		'POLICY_MERCENARIES',			NULL							),
 ('EACIV_IKKOS',				'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_EGYPT',		'TECH_HORSEBACK_RIDING',	'Warrior',		NULL,							'BUILDING_IKKOS'				),
-('EACIV_AB',				'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_ENGLAND',		'TECH_ELEPHANT_TRAINING',	NULL,			NULL,							'BUILDING_AB'					),
+('EACIV_AB',				'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_ENGLAND',		'TECH_ELEPHANT_LABOR',		NULL,			NULL,							'BUILDING_AB'					),
 ('EACIV_FIR_BOLG',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_FRANCE',		'TECH_ANIMAL_HUSBANDRY',	NULL,			NULL,							NULL							),
 ('EACIV_CRUITHNI',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_GERMANY',		'TECH_TRACKING_TRAPPING',	NULL,			NULL,							NULL							),
 ('EACIV_CRECY',				'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_GREECE',		'TECH_ARCHERY',				'Warrior',		NULL,							NULL							),
 ('EACIV_DAGGOO',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_INDIA',		'TECH_HARPOONS',			NULL,			NULL,							NULL							),
-('EACIV_FOMHOIRE',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_JAPAN',		'TECH_SAILING',				NULL,			NULL,							'BUILDING_FOMHOIRE'				),
+('EACIV_FOMHOIRE',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_JAPAN',		'TECH_SAILING',				NULL,			NULL,							NULL							),
 ('EACIV_PARAKHORA',			'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_OTTOMAN',		'TECH_MILLING',				NULL,			'POLICY_EACIV_PARAKHORA',		NULL							),
 ('EACIV_NEITH',				'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_OTTOMAN',		'TECH_WEAVING',				'Merchant',		NULL,							NULL							),	
 ('EACIV_ELEUTHERIOS',		'testbackground_1.17_856x700.dds',			'PLAYERCOLOR_ARABIA',		'TECH_ZYMURGY',				'Merchant',		NULL,							NULL							),
@@ -142,7 +142,7 @@ INSERT INTO EaCivs (Type,	Quote,								PopupImage,								DefaultPlayerColor,		
 ('EACIV_MACHAE',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_AUSTRIA',	'POLICY_WARCRAFT',			'Warrior',			NULL,				NULL,				'Warrior',		'POLICY_GOLD_FROM_KILLS'	),	
 ('EACIV_BODWA',				NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_BYZANTIUM','POLICY_WARSPIRIT',			NULL,				'Berserker',		'EAPERSON_BADB',	'Warrior',		NULL						),	
 --('EACIV_MORD',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_AMERICA',	'POLICY_MILITARISM',		'Warrior',			NULL,				NULL,				'Warrior',		NULL						),
-('EACIV_THEANON',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_CARTHAGE',	'POLICY_SCHOLASTICISM',		'Sage',				NULL,				'EAPERSON_THEANO',	'Sage',			NULL						),
+('EACIV_THEANON',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_CARTHAGE',	'POLICY_SCHOLASTICISM',		'Sage',				NULL,				'EAPERSON_THEONO',	'Sage',			NULL						),
 ('EACIV_SAGUENAY',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_CELTS',	'POLICY_FOLKART',			'Artist',			NULL,				NULL,				'Artist',		NULL						),	
 ('EACIV_ALBION',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_ETHIOPIA',	'POLICY_FOLKLORE',			'Artist',			NULL,				NULL,				'Artist',		'POLICY_1C_VARIOUS_BUILDINGS'),	
 ('EACIV_TIR_ECNE',			NULL,								'testbackground_1.17_856x700.dds',		'PLAYERCOLOR_MAYA',		'POLICY_SCHOLASTICISM',		'Sage',				NULL,				'EAPERSON_ECNE',	'Sage',			NULL						),	
@@ -159,8 +159,7 @@ INSERT INTO EaCivs (Type,	Quote,								PopupImage,								DefaultPlayerColor,		
 
 UPDATE EaCivs SET OrAdoptedPolicy1 = 'POLICY_GUILDS', OrAdoptedPolicy2 = 'POLICY_CIVIL_SERVICE'  WHERE Type = 'EACIV_EOGANACHTA';
 UPDATE EaCivs SET OrAdoptedPolicy1 = 'POLICY_WOODS_LORE', OrAdoptedPolicy2 = 'POLICY_EARTH_LORE'  WHERE Type = 'EACIV_SKOGR';
-UPDATE EaCivs SET OrAdoptedPolicy1 = 'POLICY_SOCIO_ARCANA' WHERE Type = 'EACIV_O';
-UPDATE EaCivs SET OrAdoptedPolicy1 = 'POLICY_SOCIO_ARCANA' WHERE Type = 'EACIV_MU';
+UPDATE EaCivs SET OrAdoptedPolicy1 = 'POLICY_SOCIO_ARCANA' WHERE Type IN ('EACIV_O', 'EACIV_MU');
 UPDATE EaCivs SET OrAdoptedPolicy1 = 'POLICY_DEBT_BONDAGE' WHERE Type = 'EACIV_NEZELIBA';
 UPDATE EaCivs SET AndAdoptedPolicy = 'POLICY_SLAVERY' WHERE Type = 'EACIV_DOKKALFAR';
 UPDATE EaCivs SET AndAdoptedPolicy = 'POLICY_TRADITION' WHERE Type = 'EACIV_LJOSALFAR';

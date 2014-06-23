@@ -29,6 +29,7 @@ local PROMOTION_MERCENARY =							GameInfoTypes.PROMOTION_MERCENARY
 local PROMOTION_SLAVE =								GameInfoTypes.PROMOTION_SLAVE
 local PROMOTION_SLAVERAIDER =						GameInfoTypes.PROMOTION_SLAVERAIDER
 local PROMOTION_SLAVEMAKER =						GameInfoTypes.PROMOTION_SLAVEMAKER
+local PROMOTION_STUNNED =							GameInfoTypes.PROMOTION_STUNNED
 local UNIT_LICH =									GameInfoTypes.UNIT_LICH
 local UNIT_SLAVES_MAN =								GameInfoTypes.UNIT_SLAVES_MAN
 local UNIT_SLAVES_SIDHE =							GameInfoTypes.UNIT_SLAVES_SIDHE
@@ -65,7 +66,8 @@ local g_iDefendingPlayer = -1
 local g_iDefendingUnit = -1
 local g_iAttackingPlayer = -1
 local g_iAttackingUnit = -1
-
+local g_defendingUnitTypeID = -1
+local g_defendingUnitXP = -1
 
 --------------------------------------------------------------
 -- Cached Tables
@@ -103,7 +105,7 @@ end
 
 function CalculateXPManaForAttack(unitTypeId, damage, bKill)
 	local basePower = gg_normalizedUnitPower[unitTypeId] or 18			--city treated as unit with power 18
-	return Floor((damage + (bKill and 33 or 0)) * basePower / 18)		-- 1 pt per 2 hp for a Warriors unit; kill is worth an additional 33 hp
+	return Floor((damage + (bKill and 50 or 0)) * basePower / 18)		-- 1 pt per 2 hp for a Warriors unit; kill is worth an additional 33 hp
 end
 
 
@@ -141,6 +143,7 @@ local function OnSerialEventUnitCreated(iPlayer, iUnit, hexVec, unitType, cultur
 			end
 		end
 		if city and city:GetNumBuilding(BUILDING_INTERNMENT_CAMP) == 1 then
+			local plot = unit:GetPlot()
 			MapModData.bBypassOnCanSaveUnit = true
 			unit:Kill(true, -1)
 			local raceID = GetCityRace(city)		--TO DO: make these unit race, not city race
@@ -152,7 +155,7 @@ local function OnSerialEventUnitCreated(iPlayer, iUnit, hexVec, unitType, cultur
 			else 
 				unitID = UNIT_SLAVES_ORC
 			end
-			local newUnit = player:InitUnit(unitID, city:GetX(), city:GetY() )
+			local newUnit = player:InitUnit(unitID, plot:GetX(), plot:GetY() )
 			newUnit:JumpToNearestValidPlot()
 			newUnit:SetHasPromotion(PROMOTION_SLAVE, true)
 		end
@@ -214,7 +217,7 @@ end
 GameEvents.UnitCaptured.Add(function(iPlayer, iUnit) return HandleError21(OnUnitCaptured, iPlayer, iUnit) end)
 
 --Forced interface mode: The Active player must do some something specific (e.g., use Magic Missile) or drop this interface mode and reset unit
-local function ResetForcedSelectionUnit()		--active player only
+local function ResetForcedSelectionUnit()		--resets temp attack unit if player fiddles around rather than attacking
 	print("ResetForcedSelectionUnit")
 	local iUnit = MapModData.forcedUnitSelection
 	local player = Players[g_iActivePlayer]
@@ -230,8 +233,6 @@ local function ResetForcedSelectionUnit()		--active player only
 			local restoredUnit = player:InitUnit(restoredUnitTypeID, unit:GetX(), unit:GetY(), nil, unit:GetFacingDirection())
 			MapModData.bBypassOnCanSaveUnit = true
 			restoredUnit:Convert(unit, false)
-			--UI.SelectUnit(restoredUnit)
-			--UI.LookAtSelectionPlot(0)
 			restoredUnit:SetPersonIndex(iPerson)
 			local iRestoredUnit = restoredUnit:GetID()
 			eaPerson.iUnit = iRestoredUnit
@@ -394,12 +395,30 @@ local function OnCombatResult(iAttackingPlayer, iAttackingUnit, attackerDamage, 
 	local defendingUnit = defendingPlayer:GetUnitByID(iDefendingUnit)
 	print("attackerX, Y = ", attackingUnit and attackingUnit:GetX(), attackingUnit and attackingUnit:GetY())
 
+	g_defendingUnitTypeID = -1
+	g_defendingUnitXP = -1
+	if defenderMaxHP == 200	then	--city; TO DO: get hp from Defines
+		--TO DO: get city race
+		gg_defendingCityRace = EARACE_MAN		--use this in city conquest event for slaves
+	else
+		local defendingUnit = defendingPlayer:GetUnitByID(iDefendingUnit)	
+		if defendingUnit then
+			g_defendingUnitTypeID = defendingUnit:GetUnitType()
+			g_defendingUnitXP = defendingUnit:GetExperience()
+
+			--TO DO: Get race from cached table
+			g_defendingUnitRace = EARACE_MAN
+		end
+	end
+
 	if fullCivs[iAttackingPlayer] then	--if full civ then do various functions
 		if attackingUnit then
-	
 			if attackingUnit:IsGreatPerson() then
 				local attackState = attackingUnit:GetGPAttackState()
 				if attackState == 1 then					--This is a Warrior Lead Charge
+					local bKill = defenderMaxHP <= defenderFinalDamage
+					local pts = CalculateXPManaForAttack(g_defendingUnitTypeID, defenderDamage, bKill)
+					attackingUnit:ChangeExperience(pts)
 					WarriorLeadCharge(iAttackingPlayer, attackingUnit, targetX, targetY)
 				elseif attackState == 2 then
 					--Callenge; not yet implemented
@@ -408,22 +427,7 @@ local function OnCombatResult(iAttackingPlayer, iAttackingUnit, attackerDamage, 
 		end
 	end
 
-	g_defendingUnitTypeID = -1
-	if defenderMaxHP == 200	then	--city; TO DO: get hp from Defines
-		
-		--TO DO: get city race
-		gg_defendingCityRace = EARACE_MAN		--use this in city conquest event for slaves
-	else
-		
-		local defendingUnit = defendingPlayer:GetUnitByID(iDefendingUnit)	
-		if defendingUnit then
-			local unitTypeID = defendingUnit:GetUnitType()
-			g_defendingUnitTypeID = unitTypeID
 
-			--TO DO: Get race from cached table
-			g_defendingUnitRace = EARACE_MAN
-		end
-	end
 end
 GameEvents.CombatResult.Add(function(iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, targetX, targetY) return HandleError(OnCombatResult, iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, targetX, targetY) end)
 
@@ -440,21 +444,63 @@ local function OnCombatEnded(iAttackingPlayer, iAttackingUnit, attackerDamage, a
 			
 			local attackingUnitTypeID = attackingUnit:GetUnitType()
 			if gg_gpTempType[attackingUnitTypeID] then					--was a special GP attack (e.g., Magic Missile)
+				local bEnergyDrain = gg_gpTempType[attackingUnitTypeID] == "EnergyDrain"
+				local bStunChance = gg_gpTempType[attackingUnitTypeID] == "PlasmaBurst"
 				local iPerson = attackingUnit:GetPersonIndex()
 				local eaPerson = gPeople[iPerson]
-				local restoredUnitTypeID = eaPerson.unitTypeID
-				local restoredUnit = attackingPlayer:InitUnit(restoredUnitTypeID, attackingUnit:GetX(), attackingUnit:GetY(), nil, attackingUnit:GetFacingDirection())
-				MapModData.bBypassOnCanSaveUnit = true		--yikes!!! Check that this is OK if combat kill happens
-				restoredUnit:Convert(attackingUnit, false)
-				UI.SelectUnit(restoredUnit)
-				--UI.LookAtSelectionPlot(0)
-				restoredUnit:SetPersonIndex(iPerson)
-				--restoredUnit:FinishMoves()
-				local iRestoredUnit = restoredUnit:GetID()
-				eaPerson.iUnit = iRestoredUnit
-				restoredUnit:SetMorale(0)
+				if not eaPerson.autoAttack then
+					local restoredUnitTypeID = eaPerson.unitTypeID
+					local restoredUnit = attackingPlayer:InitUnit(restoredUnitTypeID, attackingUnit:GetX(), attackingUnit:GetY(), nil, attackingUnit:GetFacingDirection())
+					MapModData.bBypassOnCanSaveUnit = true		--yikes!!! Check that this is OK if combat kill happens
+					restoredUnit:Convert(attackingUnit, false)
+					UI.SelectUnit(restoredUnit)
+					restoredUnit:SetPersonIndex(iPerson)
+					local iRestoredUnit = restoredUnit:GetID()
+					eaPerson.iUnit = iRestoredUnit
+					restoredUnit:SetMorale(0)
+				end
 				local bDefenderKilled = (g_defendingUnitTypeID ~= -1) and (not defendingUnit or defendingUnit:IsDelayedDeath())
-				local pts = CalculateXPManaForAttack(g_defendingUnitTypeID, defenderDamage, bDefenderKilled)
+				local pts
+				if bEnergyDrain and -1 < g_defendingUnitXP then
+					local mod = GetGPMod(iPerson, "EAMOD_NECROMANCY", nil)
+					print("Death Ray attack: mod, power, xp = ", mod, gg_baseUnitPower[g_defendingUnitTypeID], g_defendingUnitXP)
+					if defendingUnit and not bDefenderKilled then
+						local xpDrain = g_defendingUnitXP < mod and g_defendingUnitXP or mod
+						if 0 < xpDrain then
+							DrainExperience(defendingUnit, xpDrain)
+							defendingUnit:GetPlot():AddFloatUpMessage(xpDrain .. " experience was drained!", 2)
+						end
+						local doDamage = mod - xpDrain
+						if 0 < doDamage then
+							local remainingHP = defenderMaxHP - defenderFinalDamage
+							doDamage = doDamage < remainingHP and doDamage or remainingHP
+							defendingUnit:GetPlot():AddFloatUpMessage(doDamage .. " hit points were drained!", 3)
+							defendingUnit:ChangeDamage(doDamage, iAttackingPlayer)
+						end
+						pts = xpDrain + doDamage
+					else
+						pts = 5		--killed by ranged strength 1 attack?
+					end
+				else
+					pts = CalculateXPManaForAttack(g_defendingUnitTypeID, defenderDamage, bDefenderKilled)
+					if bStunChance and defendingUnit and not bDefenderKilled then
+						local mod = GetGPMod(iPerson, "EAMOD_EVOCATION", nil)
+						local power = gg_baseUnitPower[g_defendingUnitTypeID]
+						print("Plasma Bolt attack: mod, power, xp = ", mod, power, g_defendingUnitXP)
+						power = power < g_defendingUnitXP and g_defendingUnitXP or power
+						local bStun = mod >= power
+						if not bStun then
+							if Floor(power, "hello") < mod then
+								bStun = true
+							end
+						end
+						if bStun then
+							defendingUnit:SetHasPromotion(PROMOTION_STUNNED, true)
+							defendingUnit:GetPlot():AddFloatUpMessage("Stunned!", 2)
+							pts = pts + 10
+						end
+					end
+				end
 				UseManaOrDivineFavor(iAttackingPlayer, iPerson, pts)
 				--restoredUnit:SetInvisibleType(INVISIBLE_SUBMARINE)
 			elseif dummyUnit[attackingUnitTypeID] then

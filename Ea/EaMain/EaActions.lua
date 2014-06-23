@@ -117,6 +117,7 @@ local g_joinedUnit
 
 local g_unitX						--same as g_x, g_y below if no targetX,Y supplied in function call
 local g_unitY				
+local g_bEmbarked
 
 local g_bTarget						--true if targetX, targetY provided; otherwise, values are for g_unitX, g_unitY
 local g_iPlot
@@ -221,7 +222,7 @@ function RegisterGPActions(iPerson)
 	local number = 1
 	for id = FIRST_GP_ACTION, FIRST_SPELL_ID - 1 do
 		local eaAction = EaActionsInfo[id]
-		if not eaAction.GPSubclass or eaAction.GPSubclass == subclass then
+		if not eaAction.GPSubclass or eaAction.GPSubclass == subclass or (subclass and eaAction.OrGPSubclass == subclass) then
 			if not eaAction.GPClass or eaAction.GPClass == class1 or eaAction.GPClass == class2 or (eaAction.OrGPClass and (eaAction.OrGPClass == class1 or eaAction.OrGPClass == class2)) then
 				if not eaAction.ExcludeGPSubclass or eaAction.ExcludeGPSubclass ~= subclass then
 					if not eaAction.NotGPClass or (eaAction.NotGPClass ~= class1 and eaAction.NotGPClass ~= class1) then
@@ -484,40 +485,47 @@ function TestEaActionForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY
 	--By default, bShow follows bAllow and text will be from eaAction.Help. If we want bShow=true when bAllow=false,
 	--then we must change below in g_bUniqueBlocked code or in action-specific SetUI function.
 
-	--Set UI for unique builds (generic way; it can be overriden by specific SetUI funtion)
-	if g_bUniqueBlocked then
-		if g_eaAction.UniqueType == "World" then
-			if gWorldUniqueAction[eaActionID] then
-				if gWorldUniqueAction[eaActionID] ~= -1 then	--being built
-					MapModData.bShow = true
-					local bMyCiv = false
-					for iPerson, eaPerson in pairs(gPeople) do
-						if eaPerson.iPlayer == iPlayer and gWorldUniqueAction[eaActionID] == iPerson then
-							bMyCiv = true
-							break
-						end
-					end
-					if bMyCiv then
-						MapModData.text = "[COLOR_WARNING_TEXT]Another Great Person from your civilization is working on this...[ENDCOLOR]"
-					else
-						MapModData.text = "[COLOR_WARNING_TEXT]A Great Person from another civilization is working on this...[ENDCOLOR]"
-					end
-				end
-			end		
-		elseif g_eaAction.UniqueType == "National" then
-			if g_eaPlayer.nationalUniqueAction[eaActionID] then
-				if g_eaPlayer.nationalUniqueAction[eaActionID] ~= -1 then	--being built
-					MapModData.bShow = true
-					MapModData.text = "[COLOR_WARNING_TEXT]Another Great Person from your civilization is working on this...[ENDCOLOR]"
-				end
-			end
-		end
-	elseif g_bSomeoneElseDoingHere then		--true only if all other tests passed
-		MapModData.bShow = true
-		MapModData.text = "[COLOR_WARNING_TEXT]You cannot do this in the same place as another great person from your civilization[ENDCOLOR]"	
+
+	if g_bEmbarked then
+		MapModData.text = "[COLOR_WARNING_TEXT]Cannot do action while embarked[ENDCOLOR]"
 	end
 
-	if g_eaAction.UnitUpgradeTypePrefix then
+	--Set UI for unique builds (generic way; it can be overriden by specific SetUI funtion)
+	if MapModData.text == "no help text" then
+		if g_bUniqueBlocked then
+			if g_eaAction.UniqueType == "World" then
+				if gWorldUniqueAction[eaActionID] then
+					if gWorldUniqueAction[eaActionID] ~= -1 then	--being built
+						MapModData.bShow = true
+						local bMyCiv = false
+						for iPerson, eaPerson in pairs(gPeople) do
+							if eaPerson.iPlayer == iPlayer and gWorldUniqueAction[eaActionID] == iPerson then
+								bMyCiv = true
+								break
+							end
+						end
+						if bMyCiv then
+							MapModData.text = "[COLOR_WARNING_TEXT]Another Great Person from your civilization is working on this...[ENDCOLOR]"
+						else
+							MapModData.text = "[COLOR_WARNING_TEXT]A Great Person from another civilization is working on this...[ENDCOLOR]"
+						end
+					end
+				end		
+			elseif g_eaAction.UniqueType == "National" then
+				if g_eaPlayer.nationalUniqueAction[eaActionID] then
+					if g_eaPlayer.nationalUniqueAction[eaActionID] ~= -1 then	--being built
+						MapModData.bShow = true
+						MapModData.text = "[COLOR_WARNING_TEXT]Another Great Person from your civilization is working on this...[ENDCOLOR]"
+					end
+				end
+			end
+		elseif g_bSomeoneElseDoingHere then		--true only if all other tests passed
+			MapModData.bShow = true
+			MapModData.text = "[COLOR_WARNING_TEXT]You cannot do this in the same place as another great person from your civilization[ENDCOLOR]"	
+		end
+	end
+
+	if MapModData.text == "no help text" and g_eaAction.UnitUpgradeTypePrefix then
 		if g_bAllTestsPassed then
 			MapModData.bShow = true
 			local upgradeUnitInfo = GameInfo.Units[g_int1]
@@ -582,6 +590,9 @@ function TestEaAction(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTa
 	if g_eaAction.SpellClass then
 		error("TestEaAction g_eaAction had a SpellClass")
 	end
+
+	g_bEmbarked = unit:IsEmbarked()
+	if g_bEmbarked then return false end
 
 	if g_eaAction.ReqEaWonder and not gWonders[GameInfoTypes[g_eaAction.ReqEaWonder] ] then return false end
 	if g_eaAction.ReligionNotFounded and gReligions[GameInfoTypes[g_eaAction.ReligionNotFounded] ] then return false end
@@ -2242,6 +2253,7 @@ Finish[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function()
 	print("GP learned a spell: ", GameInfo.EaActions[g_eaPerson.learningSpellID].Type)
 	g_eaPerson.learningSpellID = -1
 	g_unit:FinishMoves()
+	return true
 end
 
 Interrupt[GameInfoTypes.EA_ACTION_LEARN_SPELL] = function(iPlayer, iPerson)
@@ -2302,6 +2314,7 @@ Finish[GameInfoTypes.EA_ACTION_OCCUPY_TOWER] = function()
 	UseManaOrDivineFavor(g_iPlayer, g_iPerson, g_value, false)
 	g_specialEffectsPlot = g_plot
 	UpdateInstanceWonder(g_iPlayer, EA_WONDER_ARCANE_TOWER)
+	return true
 end
 
 --this is not table safe!
@@ -2397,6 +2410,7 @@ Finish[GameInfoTypes.EA_ACTION_OCCUPY_TEMPLE] = function()
 	UseManaOrDivineFavor(g_iPlayer, g_iPerson, 20, false)	--20 mana or divine favor
 	g_specialEffectsPlot = g_plot
 	UpdateUniqueWonder(g_iPlayer, g_int1)
+	return true
 end
 ------------------------------------------------------------------------------------------------------------------------------
 -- Prophecies
@@ -2844,6 +2858,7 @@ end
 
 Finish[GameInfoTypes.EA_ACTION_EPIC_HAVAMAL] = function()
 	ResetHappyUnhappyFromMod(g_iPlayer)
+	return true
 end
 
 --EA_ACTION_EPIC_VAFTHRUTHNISMAL
@@ -2862,6 +2877,7 @@ end
 
 Finish[GameInfoTypes.EA_ACTION_EPIC_GRIMNISMAL] = function()
 	ResetPlayerGPMods(g_iPlayer)
+	return true
 end
 
 --EA_ACTION_EPIC_HYMISKVITHA
@@ -2898,7 +2914,7 @@ Finish[GameInfoTypes.EA_ACTION_TOME_OF_EQUUS] = function()
 			unit:ChangeExperience(xpChange)
 		end
 	end
-	
+	return true	
 end
 
 --EA_ACTION_TOME_OF_BEASTS
@@ -2986,7 +3002,22 @@ end
 ------------------------------------------------------------------------------------------------------------------------------
 --EA_ACTION_LAND_TRADE_ROUTE
 Test[GameInfoTypes.EA_ACTION_LAND_TRADE_ROUTE] = function()
-	--There is no test here; but we need to set g_tradeAvailableTable and gg_tradeAvailableTable
+	local numAvailable = g_player:GetNumInternationalTradeRoutesAvailable()
+	numAvailable = numAvailable - g_player:GetNumInternationalTradeRoutesUsed()
+	if g_bAIControl then
+		numAvailable = numAvailable - (g_eaPlayer.aiNumTradeRoutesTargeted or 0)
+	end
+	if numAvailable < 1 then
+		g_testTargetSwitch = 5
+		return false
+	end
+	numAvailable = numAvailable - g_player:GetNumAvailableTradeUnits()
+	if numAvailable < 1 then
+		g_testTargetSwitch = 5
+		return false
+	end
+
+	--Set g_tradeAvailableTable and gg_tradeAvailableTable
 	MapModData.bBypassOnCanCreateTradeRoute = true
 	g_tradeAvailableTable = g_player:GetTradeRoutesAvailable()
 	MapModData.bBypassOnCanCreateTradeRoute = false
@@ -3071,6 +3102,9 @@ SetUI[GameInfoTypes.EA_ACTION_LAND_TRADE_ROUTE] = function()
 		elseif g_testTargetSwitch == 3 then
 			MapModData.text = "[COLOR_WARNING_TEXT]Only one Merchant at a time can establish Trade Routes in a particular city[ENDCOLOR]"
 		end
+	elseif g_bIsCity and g_testTargetSwitch == 5 then
+		MapModData.bShow = true
+		MapModData.text = "[COLOR_WARNING_TEXT]You are using the maximum number of trade routes allowed for your civilization[ENDCOLOR]"
 	end
 end
 
@@ -3122,13 +3156,33 @@ Finish[GameInfoTypes.EA_ACTION_LAND_TRADE_ROUTE] = function()
 	g_specialEffectsPlot = fromCityPlot
 	local unit = g_player:InitUnit(GameInfoTypes.UNIT_CARAVAN, fromCity:GetX(), fromCity:GetY())
 	unit:PushMission(MissionTypes.MISSION_ESTABLISH_TRADE_ROUTE, g_iPlot, 0, 0, 0, 1)
+	AIRecalculateNumTradeRoutesTargeted(g_iPlayer)
 	return true
+end
+
+Interrupt[GameInfoTypes.EA_ACTION_LAND_TRADE_ROUTE] = function(iPlayer, iPerson)
+	AIRecalculateNumTradeRoutesTargeted(iPlayer)
 end
 
 
 --EA_ACTION_SEA_TRADE_ROUTE
 Test[GameInfoTypes.EA_ACTION_SEA_TRADE_ROUTE] = function()
-	--There is no test here; but we need to set g_tradeAvailableTable and gg_tradeAvailableTable
+	local numAvailable = g_player:GetNumInternationalTradeRoutesAvailable()
+	numAvailable = numAvailable - g_player:GetNumInternationalTradeRoutesUsed()
+	if g_bAIControl then
+		numAvailable = numAvailable - (g_eaPlayer.aiNumTradeRoutesTargeted or 0)
+	end
+	if numAvailable < 1 then
+		g_testTargetSwitch = 5
+		return false
+	end
+	numAvailable = numAvailable - g_player:GetNumAvailableTradeUnits()
+	if numAvailable < 1 then
+		g_testTargetSwitch = 5
+		return false
+	end
+
+	--Set g_tradeAvailableTable and gg_tradeAvailableTable
 	MapModData.bBypassOnCanCreateTradeRoute = true
 	g_tradeAvailableTable = g_player:GetTradeRoutesAvailable()
 	MapModData.bBypassOnCanCreateTradeRoute = false
@@ -3211,6 +3265,9 @@ SetUI[GameInfoTypes.EA_ACTION_SEA_TRADE_ROUTE] = function()
 		elseif g_testTargetSwitch == 3 then
 			MapModData.text = "[COLOR_WARNING_TEXT]Only one Merchant at a time can establish Trade Routes in a particular city[ENDCOLOR]"
 		end
+	elseif g_bIsCity and g_testTargetSwitch == 5 then
+		MapModData.bShow = true
+		MapModData.text = "[COLOR_WARNING_TEXT]You are using the maximum number of trade routes allowed for your civilization[ENDCOLOR]"
 	end
 end
 
@@ -3261,9 +3318,11 @@ Finish[GameInfoTypes.EA_ACTION_SEA_TRADE_ROUTE] = function()
 	g_specialEffectsPlot = fromCityPlot
 	local unit = g_player:InitUnit(GameInfoTypes.UNIT_CARGO_SHIP, fromCity:GetX(), fromCity:GetY())
 	unit:PushMission(MissionTypes.MISSION_ESTABLISH_TRADE_ROUTE, g_iPlot, 2, 0, 0, 1)				--2nd arg?
+	AIRecalculateNumTradeRoutesTargeted(g_iPlayer)
 	return true
 end
 
+Interrupt[GameInfoTypes.EA_ACTION_SEA_TRADE_ROUTE] = Interrupt[GameInfoTypes.EA_ACTION_LAND_TRADE_ROUTE]
 
 --EA_ACTION_TRADE_HOUSE
 TestTarget[GameInfoTypes.EA_ACTION_TRADE_HOUSE] = function()
