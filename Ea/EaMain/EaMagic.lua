@@ -27,17 +27,22 @@ local HIGHLIGHT_COLOR = {
   BLACK =	{x=0.0, y=0.0, z=0.0, w=1.0}
 }
 
+--localized tables
+local fullCivs = MapModData.fullCivs
+
 --localized functions
 local GetPlotByIndex =		Map.GetPlotByIndex
 local GetPlotByXY =			Map.GetPlot
 local GetPlotIndexFromXY =	GetPlotIndexFromXY
 local PlotDistance =		Map.PlotDistance
 local Rand =				Map.Rand
-local Floor =				math.floor
+local floor =				math.floor
 local Vector2 =				Vector2
 local ToHexFromGrid =		ToHexFromGrid
 local HandleError21 =		HandleError21
 local HandleError31 =		HandleError31
+
+local gg_eaSpecial =		gg_eaSpecial
 
 --file functions
 local OnPlotEffect = {}
@@ -56,6 +61,30 @@ local xpBoostFromManaUse = {}
 for eaCivInfo in GameInfo.EaCivs() do
 	if eaCivInfo.XPBoostFromManaUse ~= 0 then
 		xpBoostFromManaUse[eaCivInfo.ID] = eaCivInfo.XPBoostFromManaUse
+	end
+end
+
+--------------------------------------------------------------
+-- Init
+--------------------------------------------------------------
+
+function EaMagicInit(bNewGame)
+	if not bNewGame then
+		for iPlayer, eaPlayer in pairs(fullCivs) do
+			local player = Players[iPlayer]
+			for unit in player:Units() do
+				local unitTypeID = unit:GetUnitType()
+				if gg_eaSpecial[unitTypeID] then
+					if gg_eaSpecial[unitTypeID] == "Archdemon" then
+						gg_summonedArchdemon[iPlayer] = unitTypeID
+					elseif gg_eaSpecial[unitTypeID] == "Archangel" then
+						gg_calledArchangel[iPlayer] = unitTypeID
+					elseif gg_eaSpecial[unitTypeID] == "MajorSpirit" then
+						gg_calledMajorSpirit[iPlayer] = unitTypeID
+					end
+				end
+			end
+		end
 	end
 end
 
@@ -111,7 +140,7 @@ function UseManaOrDivineFavor(iPlayer, iPerson, pts, bNoDrain, consumedFloatUpPl
 			if unit then
 				local xp = pts
 				if xpBoostFromManaUse[eaPlayer.eaCivNameID] then
-					xp = xp + Floor(pts * xpBoostFromManaUse[eaPlayer.eaCivNameID] / 100)
+					xp = xp + floor(pts * xpBoostFromManaUse[eaPlayer.eaCivNameID] / 100)
 				end
 				unit:ChangeExperience(xp)
 				if eaPlayer.bIsFallen then

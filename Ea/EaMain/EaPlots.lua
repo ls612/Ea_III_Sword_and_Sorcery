@@ -27,6 +27,7 @@ local TERRAIN_PLAINS =						GameInfoTypes.TERRAIN_PLAINS
 local TERRAIN_TUNDRA =						GameInfoTypes.TERRAIN_TUNDRA
 local TERRAIN_DESERT =						GameInfoTypes.TERRAIN_DESERT
 
+local FEATURE_ATOLL =						GameInfoTypes.FEATURE_ATOLL
 local FEATURE_ICE =							GameInfoTypes.FEATURE_ICE
 local FEATURE_FOREST = 						GameInfoTypes.FEATURE_FOREST
 local FEATURE_JUNGLE = 						GameInfoTypes.FEATURE_JUNGLE
@@ -72,6 +73,7 @@ local RELIGION_CULT_OF_CAHRA =				GameInfoTypes.RELIGION_CULT_OF_CAHRA
 local RELIGION_CULT_OF_BAKKHEIA =			GameInfoTypes.RELIGION_CULT_OF_BAKKHEIA
 
 local SPREAD_CHANCE_DENOMINATOR = 300 * GAME_SPEED_MULTIPLIER
+print("SPREAD_CHANCE_DENOMINATOR = ", SPREAD_CHANCE_DENOMINATOR)
 
 --global tables
 local Players =		Players
@@ -82,27 +84,30 @@ local playerType =	MapModData.playerType
 local bHidden =		MapModData.bHidden
 local fullCivs =	MapModData.fullCivs
 local realCivs =	MapModData.realCivs
+local gg_init =						gg_init
 local gg_animalSpawnPlots =			gg_animalSpawnPlots
 local gg_animalSpawnInhibitTeams =	gg_animalSpawnInhibitTeams
 local gg_undeadSpawnPlots =			gg_undeadSpawnPlots
 local gg_demonSpawnPlots =			gg_demonSpawnPlots
-	
+local gg_playerCityPlotIndexes =	gg_playerCityPlotIndexes
+local gg_remoteImprovePlot =		gg_remoteImprovePlot
+local gg_cityRemoteImproveCount =	gg_cityRemoteImproveCount
+local gg_naturalWonders =			gg_naturalWonders
+
 --localized functions
 local Rand = Map.Rand
-local Distance = Map.PlotDistance
+local PlotDistance = Map.PlotDistance
 local GetPlotFromXY = Map.GetPlot
 local GetPlotByIndex = Map.GetPlotByIndex
-local Floor = math.floor
-local StrChar = string.char
+local GetPlotIndexFromXY = GetPlotIndexFromXY
+local floor = math.floor
 local HandleError41 = HandleError41
 local HandleError = HandleError
 
 --file control
---local g_validForestJunglePlots = 0		--counted at init (grass + plains + tundra)
 local g_bNotVisibleByResourceID = {}
 local g_bBlockedByFeatureID = {}
 local g_addResource = {}
---local g_newGrowthHolder = {}
 local g_hasTechBronze = {}
 local g_hasTechIron = {}
 local g_hasTechForestry = {}
@@ -112,7 +117,8 @@ local g_hasFeralBond = {}
 local g_wildlandsCountCommuneWithNature = {}
 local g_forestDominionPlayers = {}
 local g_nonImprovedLivingTerrainStr = {}		--index by iPlot, holds str but only for non-improved
-	--city tables below indexed by city object (clear all after use)
+
+--city tables below indexed by city object (clear all after use)
 local g_cityFollowerReligion = {}	
 local g_cityUnimprovedForestJungle = {}	--count for Cult of Leaves only
 local g_cityDesertCahraFollower = {}	--count for Cult of Cahra only
@@ -122,7 +128,6 @@ local integers1 = {}
 local integers2 = {}
 local g_plotList = {}
 
-local bInitialized = false
 
 --------------------------------------------------------------
 -- Cached Tables
@@ -146,6 +151,7 @@ for row in GameInfo.Building_EaConvertImprovedResource() do
 end
 
 local livTerTypeByID = {[FEATURE_FOREST]="forest"; [FEATURE_JUNGLE]="jungle"; [FEATURE_MARSH]="marsh"}
+local livTerFeatureIDByType = {FEATURE_FOREST, FEATURE_JUNGLE, FEATURE_MARSH}	--1, 2, 3
 
 local blightSafeImprovement = {}
 for improvementInfo in GameInfo.Improvements() do
@@ -160,194 +166,16 @@ for resourceInfo in GameInfo.Resources() do
 end
 
 --------------------------------------------------------------
--- Init
---------------------------------------------------------------
-
-function EaPlotsInit(bNewGame)
-	print("Running EaPlotsInit...")
-	--new map stuff
-	if bNewGame then 
-		local GetPlotByIndex = GetPlotByIndex
-		local Distance = Map.PlotDistance
-
-		local livingTerrainTypes = {[GameInfoTypes.FEATURE_FOREST] = 1,	--"forest",
-									[GameInfoTypes.FEATURE_JUNGLE] = 2,	--"jungle",
-									[GameInfoTypes.FEATURE_MARSH] = 3	}	--"marsh"
-
-		local Distance = Map.PlotDistance
-		local validForestJunglePlots = 0
-		local originalForestJunglePlots = 0
-		local ownablePlots = 0
-		for iPlot = 0, Map.GetNumPlots() - 1 do
-			local plot = GetPlotByIndex(iPlot)
-			local plotTypeID = plot:GetPlotType()
-			local terrainID = plot:GetTerrainType()
-			local featureID = plot:GetFeatureType()
-			local resourceID = plot:GetResourceType(-1)
-			local livingTerrainType = livingTerrainTypes[featureID]
-			if livingTerrainType then
-				local strength = Map.Rand(4, "Terrain Strength")	--give living terrain a random strength from 0 to 3
-				plot:SetLivingTerrainData(livingTerrainType, true, strength, -100)	-- -100 chop turn means never
-			end
-
-			if plotTypeID ~= PlotTypes.PLOT_MOUNTAIN then
-				if resourceID ~= -1 or not plot:IsWater() or plot:IsLake() then
-					ownablePlots = ownablePlots + 1
-				end
-				if terrainID == TERRAIN_GRASS or terrainID == TERRAIN_PLAINS or terrainID == TERRAIN_TUNDRA then
-					validForestJunglePlots = validForestJunglePlots + 1
-					if featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE then
-						originalForestJunglePlots = originalForestJunglePlots + 1
-					end 
-				end
-			end 
-			
-		end
-		print(" - originalForestJunglePlots, validForestJunglePlots, ownablePlots = ", originalForestJunglePlots, validForestJunglePlots, ownablePlots)
-		MapModData.validForestJunglePlots = validForestJunglePlots
-		MapModData.originalForestJunglePlots = originalForestJunglePlots
-		MapModData.ownablePlots = ownablePlots
-		local SaveDB = Modding.OpenSaveData()
-		SaveDB.SetValue("ValidForestJunglePlots", validForestJunglePlots)
-		SaveDB.SetValue("OriginalForestJunglePlots", originalForestJunglePlots)
-		SaveDB.SetValue("OwnablePlots", ownablePlots)
-
-		--Weaken to 0 around Man starting plot (3 radius); remove from 1 radius
-		for iPlayer, eaPlayer in pairs(realCivs) do
-			if eaPlayer.race == GameInfoTypes.EARACE_MAN then
-				local player = Players[iPlayer]
-				local startingPlot = player:GetStartingPlot()
-				local startX, startY = startingPlot:GetX(), startingPlot:GetY()
-				for x, y in PlotToRadiusIterator(startX, startY, 3) do
-					local distance = Distance(x, y, startX, startY)
-					local plot = GetPlotFromXY(x, y)
-					local featureID = plot:GetFeatureType()
-					if featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE or featureID == FEATURE_MARSH then
-						if distance < 2 then
-							plot:SetFeatureType(-1)
-							plot:SetLivingTerrainData(-1, false, 0, -100)	--never existed
-						else
-							plot:SetLivingTerrainStrength(0)					
-						end
-					end
-				end
-			end
-		end
-	else		--Loaded game
-		local SaveDB = Modding.OpenSaveData()
-		MapModData.validForestJunglePlots = SaveDB.GetValue("ValidForestJunglePlots", validForestJunglePlots)
-		MapModData.originalForestJunglePlots = SaveDB.GetValue("OriginalForestJunglePlots", originalForestJunglePlots)
-		MapModData.ownablePlots = SaveDB.GetValue("OwnablePlots", ownablePlots)
-	end
-
-	for iPlayer, eaPlayer in pairs(realCivs) do
-		g_addResource[iPlayer] = {}
-		g_bNotVisibleByResourceID[iPlayer] = {}
-		g_bBlockedByFeatureID[iPlayer] = {}
-	end
-
-	--all plots cycle (new or loaded)
-
-	local totalLivingTerrainStrength = 0
-	local harmonicMeanDenominator = 0
-	local lakeCounter, fishingCounter, whaleCounter, campCounter = 0, 0, 0, 0
-	for iPlot = 0, Map.GetNumPlots() - 1 do
-		local x, y = GetXYFromPlotIndex(iPlot)
-		local plot = GetPlotByIndex(iPlot)
-		local plotTypeID = plot:GetPlotType()
-		local terrainID = plot:GetTerrainType()
-		local resourceID = plot:GetResourceType(-1)
-		local featureID = plot:GetFeatureType()
-		local improvementID = plot:GetImprovementType()
-		local type, present, strength, turnChopped = plot:GetLivingTerrainData()
-		--remote resource/improvement tracking
-		if resourceID ~= -1 then
-			if resourceID == RESOURCE_WHALE then
-				whaleCounter = whaleCounter + 1
-				gg_whales[whaleCounter] = {x = x, y = y}
-			elseif resourceID == RESOURCE_FISH or resourceID == RESOURCE_CRAB or resourceID == RESOURCE_PEARLS then
-				fishingCounter = fishingCounter + 1
-				gg_fishingBoatResources[fishingCounter] = {x = x, y = y}
-			elseif resourceID == RESOURCE_DEER or resourceID == RESOURCE_BOARS or resourceID == RESOURCE_FUR or resourceID == RESOURCE_ELEPHANT then
-				campCounter = campCounter + 1
-				gg_campResources[campCounter] = {x = x, y = y}
-			end
-		end
-		if plot:IsLake() then
-			lakeCounter = lakeCounter + 1
-			gg_lakes[lakeCounter] = {x = x, y = y}
-		end
-		--tracking for strength conversion
-		local featureID = plot:GetFeatureType()
-		if livTerTypeByID[featureID] and improvementID == -1 then
-			g_nonImprovedLivingTerrainStr[iPlot] = plot:GetLivingTerrainStrength()
-		else
-			g_nonImprovedLivingTerrainStr[iPlot] = nil
-		end
-		--Natural Wonders
-		if featureID ~= -1 then
-			local featureInfo = GameInfo.Features[featureID]
-			if featureInfo.NaturalWonder then
-				local nwTable = {}
-				nwTable.x = x
-				nwTable.y = y
-				if featureInfo.EaGod then
-					local godID = GameInfoTypes[featureInfo.EaGod]
-					--which player is this god?
-					if godID then
-						local iGod
-						for iPlayer = GameDefines.MAX_MAJOR_CIVS, GameDefines.MAX_CIV_PLAYERS - 1 do
-							local player = Players[iPlayer]
-							if player:IsAlive() and player:GetMinorCivType() == godID then
-								iGod = iPlayer
-								break
-							end
-						end
-						if iGod then
-							nwTable.godID = godID
-							nwTable.iGod = iGod
-						end
-					end
-				end
-				gg_naturalWonders[featureInfo.ID] = nwTable
-			end
-		end
-		totalLivingTerrainStrength = totalLivingTerrainStrength + (improvementID == -1 and strength or strength/3)
-		if plotTypeID ~= PlotTypes.PLOT_MOUNTAIN and (terrainID == TERRAIN_GRASS or terrainID == TERRAIN_PLAINS or terrainID == TERRAIN_TUNDRA) then
-			harmonicMeanDenominator = harmonicMeanDenominator + (livTerTypeByID[featureID] and 1/(strength + 2) or 1)
-		end
-	end
-	
-	MapModData.totalLivingTerrainStrength = Floor(totalLivingTerrainStrength)
-	MapModData.harmonicMeanDenominator = harmonicMeanDenominator
-	print("Lakes, FishingResources, Whales, CampResources ", lakeCounter, fishingCounter, whaleCounter, campCounter)
-end
-
-function EaPlotsInitialized()	--delay until player in game
-	bInitialized = true
-end
-
---------------------------------------------------------------
 -- Local Functions
 --------------------------------------------------------------
-
-function LivingTerrainGrowHere(iPlot, type)
-	local plot = GetPlotByIndex(iPlot)
-	if type == 1 then	--"forest"
-		plot:SetFeatureType(FEATURE_FOREST)
-	elseif type == 2 then	-- "jungle"
-		plot:SetFeatureType(FEATURE_JUNGLE)
-	elseif type == 3 then	--"marsh"
-		plot:SetFeatureType(FEATURE_MARSH)
-	end
-end
 
 local function DoLivingTerrainSpread(fromPlot, toPlot, fromType, fromStrength)
 	local toType, toPresent, toStrength, toTurnChopped = toPlot:GetLivingTerrainData()
 	if toType == -1 or toStrength < 5 then	
 		LivingTerrainGrowHere(toPlot:GetPlotIndex(), fromType)
 		toPlot:SetLivingTerrainData(fromType, true, 1, -100)
-		fromPlot:SetLivingTerrainData(fromStrength - 1)
+		fromStrength = fromStrength - 1
+		fromPlot:SetLivingTerrainData(fromStrength)
 		print("Living terrain has spread to an adjacent (non-living or not very strong) tile ", fromPlot:GetPlotIndex(), toPlot:GetPlotIndex())
 	else
 		--may have conflict between spread type and old (currently absent) type; don't want to kill a stronger terrain that was just chopped, so regrow it as own type
@@ -358,51 +186,51 @@ local function DoLivingTerrainSpread(fromPlot, toPlot, fromType, fromStrength)
 		else	--type must be consistent with current feature or chops get very messy
 			LivingTerrainGrowHere(toPlot:GetPlotIndex(), fromType)	
 			toPlot:SetLivingTerrainData(fromType, true, toStrength + 1, toTurnChopped)
-			fromPlot:SetLivingTerrainData(fromStrength - 1)
+			fromStrength = fromStrength - 1
+			fromPlot:SetLivingTerrainData(fromStrength)
 			print("Living terrain has awakened and converted an adjacent (currently absent) living tile ", fromPlot:GetPlotIndex(), toPlot:GetPlotIndex())
 			print("Was, ", toType, true, toStrength, toTurnChopped)
 			print("Is now: ", fromType, true, toStrength+1, toTurnChopped)
 		end
-		
 	end
-
+	return fromStrength
 end
 
---[[
-local function DoLivingTerrainSpread()
-	-- self-regeneration already done
-	for iPlot, spreadType in pairs(g_newGrowthHolder) do
-		--print("living terrain spreads ", iPlot, spreadType)
-		local plot = GetPlotByIndex(iPlot)
-		local type, present, strength, turnChopped = plot:GetLivingTerrainData()
-		if type == -1 then	--"none"
-			LivingTerrainGrowHere(iPlot, spreadType)
-			plot:SetLivingTerrainData(spreadType, true, 0, -100)
-			print("Living terrain has spread to an adjacent (non-living) tile: ", spreadType, iPlot)
-		else
-			if plot:GetFeatureType() == -1 then	--skip if feature here now (may have regenerated on its own)
-				--may have conflict now between spread type and old (currently absent) type; don't want to kill a strong terrain
-				if spreadType == type or strength > 2 then	--re-grow and keep old strength (respawns as its own type)
-					LivingTerrainGrowHere(iPlot, type)	
-					plot:SetLivingTerrainData(type, true, strength, turnChopped)
-					print("Living terrain has re-awakened an adjacent tile: ", type, true, strength, turnChopped)
-				else	--kind of weak so just replace (type must be consistent with current feature or chops get very messy)
-					LivingTerrainGrowHere(iPlot, spreadType)	
-					plot:SetLivingTerrainData(spreadType, true, 1, turnChopped)
-					print("Living terrain has overcome an adjacent living tile.")
-					print("Was, ", type, true, strength, turnChopped)
-					print("Is now: ", spreadType, true, 1, turnChopped)
+local function DoLivingTerrainSpreadOrStrengthTransfer(plot, type, strength)
+	print("Living Terrain wants to spread; iPlot, type, strength ", iPlot, type, strength)
+	for adjPlot in AdjacentPlotIterator(plot, true) do	--randomized order
+		if not adjPlot:IsCity() and adjPlot:GetImprovementType() == -1 then
+			local adjPlotTypeID = adjPlot:GetPlotType()
+			if adjPlotTypeID == PLOT_LAND or adjPlotTypeID == PLOT_HILLS then
+				local adjFeatureID = adjPlot:GetFeatureType()
+				if adjFeatureID == -1 then									--may grow new feature if plot is suitable
+					local adjTerrainType = adjPlot:GetTerrainType()
+					if (type == 1 and (adjTerrainType == TERRAIN_GRASS or adjTerrainType == TERRAIN_PLAINS or adjTerrainType == TERRAIN_TUNDRA))
+								or (type == 2 and adjTerrainType == TERRAIN_GRASS)
+								or (type == 3 and adjTerrainType == TERRAIN_GRASS and adjPlotTypeID == PLOT_LAND) then
+						strength = DoLivingTerrainSpread(plot, adjPlot, type, strength)
+						break
+					end	
+				elseif livTerFeatureIDByType[type] == adjFeatureID then		--spread some strength
+					local transferStrength = 1
+					if 5 < strength then
+						transferStrength = Rand(floor(strength / 3), "hello") + 1
+					end
+					strength = strength - transferStrength
+					plot:SetLivingTerrainStrength(strength)
+					adjPlot:SetLivingTerrainStrength(adjPlot:GetLivingTerrainStrength() + transferStrength)
+					print("A living terrain transfered strength", iPlot, adjPlot:GetPlotIndex(), type, transferStrength)
+					break
 				end
 			end
 		end
-		g_newGrowthHolder[iPlot] = nil
 	end
+	return strength
 end
-]]
 
 local function UseAccumulatedLivingTerrainEffects()
 	-- strengthen random unimproved Living Terrain for conversion process or other accumulated effects (this is behind conversion accumulation by 1 turn and for new growth by 2 but doesn't matter)
-	local strengthPoints = Floor(gWorld.livingTerrainConvertStr)
+	local strengthPoints = floor(gWorld.livingTerrainConvertStr)
 	if 0 < strengthPoints then
 		local pointsUsed = 0
 		local numPlots = 0
@@ -492,8 +320,179 @@ local function ResetTablesForPlotLoop()
 end
 
 --------------------------------------------------------------
+-- Init
+--------------------------------------------------------------
+
+function EaPlotsInit(bNewGame)
+	print("Running EaPlotsInit...")
+	--new map stuff
+	if bNewGame then 
+		local GetPlotByIndex = GetPlotByIndex
+		local PlotDistance = Map.PlotDistance
+
+		local livingTerrainTypes = {[GameInfoTypes.FEATURE_FOREST] = 1,	--"forest",
+									[GameInfoTypes.FEATURE_JUNGLE] = 2,	--"jungle",
+									[GameInfoTypes.FEATURE_MARSH] = 3	}	--"marsh"
+
+		local validForestJunglePlots = 0
+		local originalForestJunglePlots = 0
+		local ownablePlots = 0
+		for iPlot = 0, Map.GetNumPlots() - 1 do
+			local plot = GetPlotByIndex(iPlot)
+			local plotTypeID = plot:GetPlotType()
+			local terrainID = plot:GetTerrainType()
+			local featureID = plot:GetFeatureType()
+			local resourceID = plot:GetResourceType(-1)
+			local livingTerrainType = livingTerrainTypes[featureID]
+			if livingTerrainType then
+				local strength = Map.Rand(4, "Terrain Strength")	--give living terrain a random strength from 0 to 3
+				plot:SetLivingTerrainData(livingTerrainType, true, strength, -100)	-- -100 chop turn means never
+			end
+
+			if plotTypeID ~= PlotTypes.PLOT_MOUNTAIN then
+				if resourceID ~= -1 or not plot:IsWater() or plot:IsLake() then
+					ownablePlots = ownablePlots + 1
+				end
+				if terrainID == TERRAIN_GRASS or terrainID == TERRAIN_PLAINS or terrainID == TERRAIN_TUNDRA then
+					validForestJunglePlots = validForestJunglePlots + 1
+					if featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE then
+						originalForestJunglePlots = originalForestJunglePlots + 1
+					end 
+				end
+			end 
+			
+		end
+		print(" - originalForestJunglePlots, validForestJunglePlots, ownablePlots = ", originalForestJunglePlots, validForestJunglePlots, ownablePlots)
+		MapModData.validForestJunglePlots = validForestJunglePlots
+		MapModData.originalForestJunglePlots = originalForestJunglePlots
+		MapModData.ownablePlots = ownablePlots
+		local SaveDB = Modding.OpenSaveData()
+		SaveDB.SetValue("ValidForestJunglePlots", validForestJunglePlots)
+		SaveDB.SetValue("OriginalForestJunglePlots", originalForestJunglePlots)
+		SaveDB.SetValue("OwnablePlots", ownablePlots)
+
+		--Weaken to 0 around Man starting plot (3 radius); remove from 1 radius
+		for iPlayer, eaPlayer in pairs(realCivs) do
+			if eaPlayer.race == GameInfoTypes.EARACE_MAN then
+				local player = Players[iPlayer]
+				local startingPlot = player:GetStartingPlot()
+				local startX, startY = startingPlot:GetX(), startingPlot:GetY()
+				for x, y in PlotToRadiusIterator(startX, startY, 3) do
+					local distance = PlotDistance(x, y, startX, startY)
+					local plot = GetPlotFromXY(x, y)
+					local featureID = plot:GetFeatureType()
+					if featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE or featureID == FEATURE_MARSH then
+						if distance < 2 then
+							plot:SetFeatureType(-1)
+							plot:SetLivingTerrainData(-1, false, 0, -100)	--never existed
+						else
+							plot:SetLivingTerrainStrength(0)					
+						end
+					end
+				end
+			end
+		end
+	else		--Loaded game
+		local SaveDB = Modding.OpenSaveData()
+		MapModData.validForestJunglePlots = SaveDB.GetValue("ValidForestJunglePlots", validForestJunglePlots)
+		MapModData.originalForestJunglePlots = SaveDB.GetValue("OriginalForestJunglePlots", originalForestJunglePlots)
+		MapModData.ownablePlots = SaveDB.GetValue("OwnablePlots", ownablePlots)
+	end
+
+	for iPlayer, eaPlayer in pairs(realCivs) do
+		g_addResource[iPlayer] = {}
+		g_bNotVisibleByResourceID[iPlayer] = {}
+		g_bBlockedByFeatureID[iPlayer] = {}
+		gg_cityRemoteImproveCount[iPlayer] = {}
+	end
+
+	--all plots cycle (new or loaded)
+
+	local totalLivingTerrainStrength = 0
+	local harmonicMeanDenominator = 0
+	--local lakeCounter, fishingCounter, whaleCounter, campCounter = 0, 0, 0, 0
+	for iPlot = 0, Map.GetNumPlots() - 1 do
+		local x, y = GetXYFromPlotIndex(iPlot)
+		local plot = GetPlotByIndex(iPlot)
+		local plotTypeID = plot:GetPlotType()
+		local terrainID = plot:GetTerrainType()
+		local resourceID = plot:GetResourceType(-1)
+		local featureID = plot:GetFeatureType()
+		local improvementID = plot:GetImprovementType()
+		local type, present, strength, turnChopped = plot:GetLivingTerrainData()
+		--remote resource/improvement tracking
+		if resourceID ~= -1 then
+			if resourceID == RESOURCE_WHALE then
+				gg_remoteImprovePlot[iPlot] = "WhalingRes"
+			elseif resourceID == RESOURCE_FISH or resourceID == RESOURCE_CRAB or resourceID == RESOURCE_PEARLS then
+				gg_remoteImprovePlot[iPlot] = "FishingRes"
+			elseif resourceID == RESOURCE_DEER or resourceID == RESOURCE_BOARS or resourceID == RESOURCE_FUR or resourceID == RESOURCE_ELEPHANT then
+				gg_remoteImprovePlot[iPlot] = "HuntingRes"
+			end
+		end
+		if plot:IsLake() then
+			gg_remoteImprovePlot[iPlot] = "Lake"
+		end
+		--tracking for strength conversion
+		local featureID = plot:GetFeatureType()
+		if livTerTypeByID[featureID] and improvementID == -1 then
+			g_nonImprovedLivingTerrainStr[iPlot] = plot:GetLivingTerrainStrength()
+		else
+			g_nonImprovedLivingTerrainStr[iPlot] = nil
+		end
+		--Natural Wonders
+		if featureID ~= -1 then
+			local featureInfo = GameInfo.Features[featureID]
+			if featureInfo.NaturalWonder then
+				local nwTable = {}
+				nwTable.x = x
+				nwTable.y = y
+				if featureInfo.EaGod then
+					local godID = GameInfoTypes[featureInfo.EaGod]
+					--which player is this god?
+					if godID then
+						local iGod
+						for iPlayer = GameDefines.MAX_MAJOR_CIVS, GameDefines.MAX_CIV_PLAYERS - 1 do
+							local player = Players[iPlayer]
+							if player:IsAlive() and player:GetMinorCivType() == godID then
+								iGod = iPlayer
+								break
+							end
+						end
+						if iGod then
+							nwTable.godID = godID
+							nwTable.iGod = iGod
+						end
+					end
+				end
+				gg_naturalWonders[featureInfo.ID] = nwTable
+			end
+		end
+		totalLivingTerrainStrength = totalLivingTerrainStrength + (improvementID == -1 and strength or strength/3)
+		if plotTypeID ~= PlotTypes.PLOT_MOUNTAIN and (terrainID == TERRAIN_GRASS or terrainID == TERRAIN_PLAINS or terrainID == TERRAIN_TUNDRA) then
+			harmonicMeanDenominator = harmonicMeanDenominator + (livTerTypeByID[featureID] and 1/(strength + 2) or 1)
+		end
+	end
+	
+	MapModData.totalLivingTerrainStrength = floor(totalLivingTerrainStrength)
+	MapModData.harmonicMeanDenominator = harmonicMeanDenominator
+	--print("Lakes, FishingResources, Whales, CampResources ", lakeCounter, fishingCounter, whaleCounter, campCounter)
+end
+
+--------------------------------------------------------------
 -- Interface
 --------------------------------------------------------------
+
+function LivingTerrainGrowHere(iPlot, type)
+	local plot = GetPlotByIndex(iPlot)
+	if type == 1 then	--"forest"
+		plot:SetFeatureType(FEATURE_FOREST)
+	elseif type == 2 then	-- "jungle"
+		plot:SetFeatureType(FEATURE_JUNGLE)
+	elseif type == 3 then	--"marsh"
+		plot:SetFeatureType(FEATURE_MARSH)
+	end
+end
 
 function GetPlotForSpawn(focalPlot, iPlayer, maxRange, bExcludeFocalPlot, bIgnoreOwn1UPT, bWaterSpawn, bAllowMountain, bRandomize, bIgnoreOpenBorders, ignoreUnit)
 	-- use maxRange = 0 if you just want a "safety test" for focal plot
@@ -563,7 +562,7 @@ function GetPlotForSpawn(focalPlot, iPlayer, maxRange, bExcludeFocalPlot, bIgnor
 	end
 
 	if 0 < maxRange then
-		local sector = bRandomize and Rand(6, "hello") or 1
+		local sector = bRandomize and Rand(6, "hello") + 1 or 1
 		for radius = 1, maxRange do
 			for testPlot in PlotRingIterator(focalPlot, radius, sector, false) do
 				if (bWaterSpawn == nil or bWaterSpawn == testPlot:IsWater()) and (not testPlot:IsCity() or testPlot:GetOwner() == iPlayer) and (bAllowMountain or not testPlot:IsMountain()) and not testPlot:IsImpassable() then
@@ -600,6 +599,7 @@ function BlightPlot(plot, iPlayer, iPerson, strength, bTestCanCast)		--last 4 ar
 	print("BlightPlot ", plot, iPlayer, iPerson, strength, bTestCanCast)
 	local featureID = plot:GetFeatureType()
 	if featureID == FEATURE_BLIGHT or featureID == FEATURE_FALLOUT or featureID >= FEATURE_CRATER or plot:IsCity() then return false end
+	if plot:IsWater() and featureID ~= FEATURE_ATOLL and not plot:IsLake() and plot:GetResourceType(-1) == -1 and not plot:IsAdjacentToLand() then return false end
 
 	if bTestCanCast then return true end
 
@@ -659,6 +659,7 @@ function BlightPlot(plot, iPlayer, iPerson, strength, bTestCanCast)		--last 4 ar
 		plot:AddFloatUpMessage(Locale.Lookup("TXT_KEY_EA_CONSUMED_MANA", manaConsumed), 1)
 	end
 
+	print("Blighting iPlot ", plot:GetPlotIndex())
 	plot:SetFeatureType(FEATURE_BLIGHT)
 	return true
 end
@@ -728,6 +729,9 @@ function BreachPlot(plot, iPlayer, iPerson, strength, bTestCanBreach)		--last 4 
 
 	local resourceID = plot:GetResourceType(-1)
 	if resourceID ~= RESOURCE_BLIGHT then
+		if resourceID ~= -1 then
+			ChangeResource(plot, -1, nil)
+		end
 		ChangeResource(plot, RESOURCE_BLIGHT, 1)
 	end
 
@@ -740,6 +744,7 @@ function BreachPlot(plot, iPlayer, iPerson, strength, bTestCanBreach)		--last 4 
 		plot:AddFloatUpMessage(Locale.Lookup("TXT_KEY_EA_CONSUMED_MANA", manaConsumed), 1)
 	end
 
+	print("Breaching iPlot ", plot:GetPlotIndex())
 	plot:SetFeatureType(FEATURE_FALLOUT)
 	plot:SetPlotEffectData(-1,-1,-1,-1)	--just cancel out any spell effects
 
@@ -781,9 +786,9 @@ function PlaceResourceNearCity(city, resourceID, bWater)
 			if plot:CanHaveResource(resourceID, false) then		--works???
 				plotScore = plotScore + 1000
 			end
-			plotScore = plotScore + 3 - Distance(x, y, cityX, cityY)	--closer to city, all else equal
+			plotScore = plotScore + 3 - PlotDistance(x, y, cityX, cityY)	--closer to city, all else equal
 			for i = 1, numSameResource do
-				local dist = Distance(x, y, integers1[i], integers2[i])
+				local dist = PlotDistance(x, y, integers1[i], integers2[i])
 				plotScore = plotScore + distancePref[dist]
 			end
 		else
@@ -807,6 +812,11 @@ end
 
 function ChangeResource(plot, resourceID, number)	--modified from IGE (use resourceID = -1 to remove)
 	print("Running ChangeResource ", plot, resourceID, number)
+	local oldResourceID = plot:GetResourceType(-1)
+	if oldResourceID ~= -1 and resourceID ~= -1 and oldResourceID ~= resourceID then
+		ChangeResource(plot, -1)
+		oldResourceID = -1
+	end
 	local iOwner = plot:GetOwner()
 	if iOwner ~= -1 then
 		local city = plot:GetWorkingCity()
@@ -821,6 +831,8 @@ function ChangeResource(plot, resourceID, number)	--modified from IGE (use resou
 			end
 		end
 
+		local iOwningCity = plot:GetCityPurchaseID()
+
 		plot:SetOwner(-1)
 
 		if resourceID == -1 then
@@ -830,7 +842,7 @@ function ChangeResource(plot, resourceID, number)	--modified from IGE (use resou
 			plot:SetResourceType(resourceID, number)
 		end
 
-		plot:SetOwner(iOwner)
+		plot:SetOwner(iOwner, iOwningCity)
 
 		if bWorking then
 			if bForced then
@@ -847,12 +859,23 @@ function ChangeResource(plot, resourceID, number)	--modified from IGE (use resou
 			plot:SetResourceType(resourceID, number)
 		end
 	end
-end
-
-function ChangePlotOwner(plot, iPlayer, iCity)
-	print("Running ChangePlotOwner ", plot, iPlayer, iCity)
-	plot:SetOwner(iPlayer, iCity)		--seems to be OK if iCity is nil
-	--do we need to do something with resource dist matrixes?
+	
+	--update mod resource plot tables
+	if resourceID ~= oldResourceID then
+		if resourceID == RESOURCE_DEER or resourceID == RESOURCE_BOARS or resourceID == RESOURCE_FUR or resourceID == RESOURCE_ELEPHANT then
+			gg_remoteImprovePlot[plot:GetPlotIndex()] = "HuntingRes"
+		elseif oldResourceID == RESOURCE_DEER or oldResourceID == RESOURCE_BOARS or oldResourceID == RESOURCE_FUR or oldResourceID == RESOURCE_ELEPHANT then
+			gg_remoteImprovePlot[plot:GetPlotIndex()] = nil
+		elseif resourceID == RESOURCE_FISH or resourceID == RESOURCE_CRAB or resourceID == RESOURCE_PEARLS then
+			gg_remoteImprovePlot[plot:GetPlotIndex()] = "FishingRes"
+		elseif oldResourceID == RESOURCE_FISH or oldResourceID == RESOURCE_CRAB or oldResourceID == RESOURCE_PEARLS then
+			gg_remoteImprovePlot[plot:GetPlotIndex()] = nil
+		elseif resourceID == RESOURCE_WHALE then
+			gg_remoteImprovePlot[plot:GetPlotIndex()] = "WhalingRes"
+		elseif oldResourceID == RESOURCE_WHALE then
+			gg_remoteImprovePlot[plot:GetPlotIndex()] = nil
+		end
+	end
 end
 
 function ChangeLivingTerrainStrengthWorldWide(changeValue, iPlayer)		--leave iPlayer nil if no one deserves credit or blame
@@ -885,6 +908,10 @@ function ChangeLivingTerrainStrengthWorldWide(changeValue, iPlayer)		--leave iPl
 	return totalStrengthAdded
 end
 
+--------------------------------------------------------------
+-- PlotsPerTurn and supporting local per turn functions
+--------------------------------------------------------------
+
 local function GetArmageddonPlotStats()
 	local armageddonStage = gWorld.armageddonStage
 	local manaDepletion = 1 - (gWorld.sumOfAllMana / MapModData.STARTING_SUM_OF_ALL_MANA)
@@ -893,11 +920,11 @@ local function GetArmageddonPlotStats()
 	local breachSpawn = 0
 	if 10 < armageddonStage then
 		blightBreachSpread = 100 * manaDepletion 
-		blightSpawn = 2 * (manaDepletion - 0.6667) + 0.5
-		breachSpawn = 2 * blightSpawn 
+		blightSpawn = 10 * (manaDepletion - 0.6667) + 2.5	--2.5% to 10%
+		breachSpawn = 2 * blightSpawn						--20% (but only qualified plots)
 	elseif 5 < armageddonStage then
 		blightBreachSpread = 30 * manaDepletion
-		blightSpawn = 2 * (manaDepletion - 0.6667) + 0.5	--0.5% to 2%
+		blightSpawn = 10 * (manaDepletion - 0.6667) + 2.5	--2.5% to 10%
 	elseif 3 < armageddonStage then
 		blightBreachSpread = 30 * manaDepletion 
 	end
@@ -927,7 +954,7 @@ local function DoVariousPlotUpdates()
 	for iPlayer, eaPlayer in pairs(realCivs) do
 		local player = Players[iPlayer]
 		for resourceID, number in pairs(g_addResource[iPlayer]) do
-			number = Floor(number)
+			number = floor(number)
 			local change = number - (eaPlayer.addedResources[resourceID] or 0)
 			if change ~= 0 then
 				player:ChangeNumResourceTotal(resourceID, change)
@@ -935,19 +962,19 @@ local function DoVariousPlotUpdates()
 			end
 		end
 		if iPlayer == iCultOfLeavesFounder then
-			eaPlayer.manaForCultOfLeavesFounder = Floor(totalUnimprovedForestJungle / 10)
+			eaPlayer.manaForCultOfLeavesFounder = floor(totalUnimprovedForestJungle / 10)
 		end
 		if iPlayer == iCultOfCahraFounder then
-			eaPlayer.manaForCultOfCahraFounder = Floor(totalDesertCahraFollower / 10)
+			eaPlayer.manaForCultOfCahraFounder = floor(totalDesertCahraFollower / 10)
 		end
 		if g_wildlandsCountCommuneWithNature[iPlayer] then
-			eaPlayer.cultureManaFromWildlands = Floor(g_wildlandsCountCommuneWithNature[iPlayer] / 4)
+			eaPlayer.cultureManaFromWildlands = floor(g_wildlandsCountCommuneWithNature[iPlayer] / 4)
 		end
 
 	end
 end
 
--- per turn plot loop
+
 
 function PlotsPerTurn()
 	--This function is really pushing the 60 upvalue limit, but it is also one we want to run very fast
@@ -979,6 +1006,11 @@ function PlotsPerTurn()
 	for iPlot = 0, Map.GetNumPlots() - 1 do
 		local x, y = GetXYFromPlotIndex(iPlot)
 		local plot = GetPlotByIndex(iPlot)
+		local bIsCity = plot:IsCity()
+		local bIsWater = plot:IsWater()
+		local bIsImpassable = plot:IsImpassable()
+
+		--be careful to update any below if changed so subsequent operations are acting on correct info
 		local type, present, strength, turnChopped = plot:GetLivingTerrainData()
 		local plotTypeID = plot:GetPlotType()
 		local terrainID = plot:GetTerrainType()
@@ -986,9 +1018,6 @@ function PlotsPerTurn()
 		local improvementID = plot:GetImprovementType()
 		local resourceID = plot:GetResourceType(-1)
 		local iOwner = plot:GetOwner()
-		local bIsCity = plot:IsCity()
-		local bIsWater = plot:IsWater()
-		local bIsImpassable = plot:IsImpassable()
 
 		--Breach/Blight effects
 		if featureID == FEATURE_FALLOUT then
@@ -1097,47 +1126,8 @@ function PlotsPerTurn()
 					end
 
 				elseif improvementID == -1 or (improvementID ~= IMPROVEMENT_LUMBERMILL and improvementID ~= IMPROVEMENT_FARM) or plot:IsImprovementPillaged() then	--these suppress living terrain
-					if Rand(SPREAD_CHANCE_DENOMINATOR, "living terrain spread") < strength then	  --spread or pass a point of strength		
-						for plotAdj in AdjacentPlotIterator(plot, true) do	--randomized order
-							if not plotAdj:IsCity() then
-								local adjPlotType = plotAdj:GetPlotType()
-								if adjPlotType ~= PlotTypes.PLOT_MOUNTAIN then
-									local iFeatureAdj = plotAdj:GetFeatureType()
-									local adjTerrainType = plotAdj:GetTerrainType()
-									if type == 1 then	--"forest"
-										if iFeatureAdj == FEATURE_FOREST then
-											plot:SetLivingTerrainStrength(strength - 1)
-											plotAdj:SetLivingTerrainStrength(plotAdj:GetLivingTerrainStrength() + 1)
-											print("A living forest transfered strength", iPlot, plotAdj:GetPlotIndex(), strength)
-											break
-										elseif adjTerrainType == TERRAIN_GRASS or adjTerrainType == TERRAIN_PLAINS or adjTerrainType == TERRAIN_TUNDRA then
-											DoLivingTerrainSpread(plot, plotAdj, type, strength)
-											break
-										end
-									elseif type == 2 then	--"jungle"
-										if iFeatureAdj == FEATURE_JUNGLE then
-											plot:SetLivingTerrainStrength(strength - 1)
-											plotAdj:SetLivingTerrainStrength(plotAdj:GetLivingTerrainStrength() + 1)
-											print("A living jungle transfered strength", iPlot, plotAdj:GetPlotIndex(), strength)
-											break
-										elseif adjTerrainType == TERRAIN_GRASS then
-											DoLivingTerrainSpread(plot, plotAdj, type, strength)
-											break
-										end								
-									elseif type == 3 then	--"marsh"
-										if iFeatureAdj == FEATURE_MARSH then
-											plot:SetLivingTerrainStrength(strength - 1)
-											plotAdj:SetLivingTerrainStrength(plotAdj:GetLivingTerrainStrength() + 1)
-											print("A living marsh transfered strength", iPlot, plotAdj:GetPlotIndex(), strength)
-											break
-										elseif adjTerrainType == TERRAIN_GRASS and adjPlotType == PlotTypes.PLOT_LAND then
-											DoLivingTerrainSpread(plot, plotAdj, type, strength)
-											break
-										end		
-									end
-								end
-							end
-						end
+					if Rand(SPREAD_CHANCE_DENOMINATOR, "living terrain spread") < strength then	  --spread or transfer strength		
+						strength = DoLivingTerrainSpreadOrStrengthTransfer(plot, type, strength)
 					end
 					--Possible take-over by adjacent player with Forest Dominion policy
 					if (featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE) and plot:IsAdjacentOwned() then
@@ -1148,32 +1138,38 @@ function PlotsPerTurn()
 								if iOwner == iFDPlayer then
 									iNewOwner = -1			--owner can defend with Forest Dominion
 									break
-								elseif plot:IsAdjacentPlayer(iFDPlayer, true) then		-- WORKS ????
+								elseif plot:IsAdjacentPlayer(iFDPlayer, true) then
 									iNewOwner = iFDPlayer
 								end
 							end
 							if iNewOwner ~= -1 then
 								print("Forest Dominion plot takeover; iPlot/iNewOwner/iOldOwner", iPlot, iNewOwner, iOwner)
-								ChangePlotOwner(plot, iNewOwner, nil)
+								local newOwnerCity = GetNewOwnerCityForPlot(iNewOwner, iPlot)
+								if newOwnerCity then
+									plot:SetOwner(iNewOwner, newOwnerCity:GetID())
+									iOwner = iNewOwner
+								end
 							end
 						end
 					end
 				end
 			else	--currently not present (ie, was remvoed in the past, will it regenerate?)
 				if bIsCity then		--permanently remove
-					plot:SetLivingTerrainData(-1, false, 0, -100)
+					type, present, strength, turnChopped = -1, false, 0, -100
+					plot:SetLivingTerrainData(type, present, strength, turnChopped)
 					print("Living terrain removed for city", iPlot)
 				elseif featureID == -1 and 0 < strength and Rand(SPREAD_CHANCE_DENOMINATOR, "hello") < strength	then	--it's back!
 					LivingTerrainGrowHere(iPlot, type)
-					plot:SetLivingTerrainData(type, true, strength, turnChopped)
-					print("Living terrain has regenerated on its own: ", iPlot, type, true, strength, turnChopped)
+					present = true
+					plot:SetLivingTerrainData(type, present, strength, turnChopped)
+					print("Living terrain has regenerated on its own: ", iPlot, type, present, strength, turnChopped)
 				end
 			end
 
 		end
 
-		--track unimproved living terrain (just reassess after changes above)
-		featureID = plot:GetFeatureType()
+		--track unimproved living terrain
+		featureID = plot:GetFeatureType()		--just reassess after possible changes above
 		if livTerTypeByID[featureID] and improvementID == -1 then
 			g_nonImprovedLivingTerrainStr[iPlot] = plot:GetLivingTerrainStrength()
 		else
@@ -1182,124 +1178,120 @@ function PlotsPerTurn()
 
 		--improvement and resource counting
 		if iOwner ~= -1 then
+
 			local eaOwner = gPlayers[iOwner]
 			local owner = Players[iOwner]
-			local iOwnerTeam = owner:GetTeam()	
-			--local resourceID = plot:GetResourceType(iOwnerTeam)		--visable only
-			--local improvementID = plot:GetImprovementType()
+			local iOwningCity = plot:GetCityPurchaseID()
+			local owningCity = owner:GetCityByID(iOwningCity)
+			if owningCity then
 
-			-- plot special used for AI
-			local resourceID = plot:GetResourceType(-1)
-			if resourceID ~= -1 and not g_bNotVisibleByResourceID[iOwner][resourceID] and not g_bBlockedByFeatureID[iOwner][resourceID] then		--visible test is now useless???
-				eaOwner.resourcesInBorders[resourceID] = (eaOwner.resourcesInBorders[resourceID] or 0) + 1
-			end
-			local bFreshWater = plot:IsFreshWater()
-			local plotSpecial
-			if plotTypeID == PlotTypes.PLOT_OCEAN then
-				if featureID ~= FEATURE_ICE then plotSpecial = "Sea" end
-			elseif plotTypeID == PlotTypes.PLOT_MOUNTAIN then
-				plotSpecial = "Mountain"
-			elseif featureID == FEATURE_FOREST then
-				plotSpecial = "Forest"
-			elseif featureID == FEATURE_JUNGLE then
-				plotSpecial = "Jungle"
-			elseif featureID == FEATURE_MARSH then
-				plotSpecial = "Marsh"
-			elseif featureID == -1 then
-				if plotTypeID == PlotTypes.PLOT_HILLS then
-					plotSpecial = "Hill"
-				elseif bFreshWater and plotTypeID == PlotTypes.PLOT_LAND then
-					plotSpecial = "Irrigable"
+				-- plot special used for AI
+				local resourceID = plot:GetResourceType(-1)
+				if resourceID ~= -1 and not g_bNotVisibleByResourceID[iOwner][resourceID] and not g_bBlockedByFeatureID[iOwner][resourceID] then		--visible test is now useless???
+					eaOwner.resourcesInBorders[resourceID] = (eaOwner.resourcesInBorders[resourceID] or 0) + 1
 				end
-			end
-			if plotSpecial then
-				eaOwner.plotSpecialsInBorders[plotSpecial] = (eaOwner.plotSpecialsInBorders[plotSpecial] or 0) + 1
-				--Error on line above probably means a hidden civ aquired land somehow
-			end
+				local bFreshWater = plot:IsFreshWater()
+				local plotSpecial
+				if plotTypeID == PlotTypes.PLOT_OCEAN then
+					if featureID ~= FEATURE_ICE then plotSpecial = "Sea" end
+				elseif plotTypeID == PlotTypes.PLOT_MOUNTAIN then
+					plotSpecial = "Mountain"
+				elseif featureID == FEATURE_FOREST then
+					plotSpecial = "Forest"
+				elseif featureID == FEATURE_JUNGLE then
+					plotSpecial = "Jungle"
+				elseif featureID == FEATURE_MARSH then
+					plotSpecial = "Marsh"
+				elseif featureID == -1 then
+					if plotTypeID == PlotTypes.PLOT_HILLS then
+						plotSpecial = "Hill"
+					elseif bFreshWater and plotTypeID == PlotTypes.PLOT_LAND then
+						plotSpecial = "Irrigable"
+					end
+				end
+				if plotSpecial then
+					eaOwner.plotSpecialsInBorders[plotSpecial] = (eaOwner.plotSpecialsInBorders[plotSpecial] or 0) + 1
+					--Error on line above probably means a hidden civ aquired land somehow
+				end
 
-			if improvementID == -1 then
-				g_wildlandsCountCommuneWithNature[iOwner] = g_wildlandsCountCommuneWithNature[iOwner] and g_wildlandsCountCommuneWithNature[iOwner] + 1
-			else
-				-- add to player count
-				eaOwner.ImprovementsByID[improvementID] = (eaOwner.ImprovementsByID[improvementID] or 0) + 1
-			end
+				if improvementID == -1 then
+					g_wildlandsCountCommuneWithNature[iOwner] = g_wildlandsCountCommuneWithNature[iOwner] and g_wildlandsCountCommuneWithNature[iOwner] + 1
+				else
+					-- add to player count
+					eaOwner.ImprovementsByID[improvementID] = (eaOwner.ImprovementsByID[improvementID] or 0) + 1
+				end
 
-			--working city counts
-			local workingCity = plot:GetWorkingCity()
-			if workingCity then
+				--owning city counts
+				if gg_remoteImprovePlot[iPlot] then		--increment count for owning city
+					local cityRemoteImproveCount = gg_cityRemoteImproveCount[iOwner][iOwningCity] or InitCityRemoteImproveCount(iOwner, iOwningCity)
+					local type = gg_remoteImprovePlot[iPlot]
+					cityRemoteImproveCount[type] = cityRemoteImproveCount[type] + 1
+				end
 
-				g_cityFollowerReligion[workingCity] = g_cityFollowerReligion[workingCity] or workingCity:GetReligiousMajority()
+
+				g_cityFollowerReligion[owningCity] = g_cityFollowerReligion[owningCity] or owningCity:GetReligiousMajority()
 				if featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE then
 					--timber and timberyard
-					if workingCity:GetNumBuilding(BUILDING_TIMBERYARD) == 1 then
+					if owningCity:GetNumBuilding(BUILDING_TIMBERYARD) == 1 then
 						if improvementID == IMPROVEMENT_LUMBERMILL then
 							g_addResource[iOwner][RESOURCE_TIMBER] = (g_addResource[iOwner][RESOURCE_TIMBER] or 0) + (g_hasTechForestry[iOwner] and 1 or 0.5)
 						elseif g_bIsPantheistic[iOwner] then
 							g_addResource[iOwner][RESOURCE_TIMBER] = (g_addResource[iOwner][RESOURCE_TIMBER] or 0) + (g_hasTechForestry[iOwner] and 0.25 or 0.125)
 						end
 					else
-						workingCity:SetNumRealBuilding(BUILDING_TIMBERYARD_ALLOW, 1)
+						owningCity:SetNumRealBuilding(BUILDING_TIMBERYARD_ALLOW, 1)
 					end
 				end
 				if improvementID == IMPROVEMENT_VINEYARD then
-					if g_cityFollowerReligion[workingCity] == RELIGION_CULT_OF_BAKKHEIA then
+					if g_cityFollowerReligion[owningCity] == RELIGION_CULT_OF_BAKKHEIA then
 						grapesWorkedByBakkeiaFollower = grapesWorkedByBakkeiaFollower + 1
 					end
 				end
 				if resourceID ~= -1 and resourceClass[resourceID] == "Earth" then
-					if g_cityFollowerReligion[workingCity] == RELIGION_CULT_OF_PLOUTON then
+					if g_cityFollowerReligion[owningCity] == RELIGION_CULT_OF_PLOUTON then
 						earthResWorkedByPloutonFollower = earthResWorkedByPloutonFollower + 1
 					end
 				end
-			end
-
-			--Cult effects for owned plots
-			if terrainID == TERRAIN_DESERT then
-				local iOwningCity = plot:GetCityPurchaseID()
-				local owningCity = owner:GetCityByID(iOwningCity)
-				if not owningCity then
-					error("Plot is owned but no owningCity")		--I don't think this can happen
-				end
-				g_cityFollowerReligion[owningCity] = g_cityFollowerReligion[owningCity] or owningCity:GetReligiousMajority()
-				if g_cityFollowerReligion[owningCity] == RELIGION_CULT_OF_CAHRA then
-					g_cityDesertCahraFollower[owningCity] = (g_cityDesertCahraFollower[owningCity] or 0) + 1
-				end
-			elseif (featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE) and improvementID == -1 then
-				local iOwningCity = plot:GetCityPurchaseID()
-				local owningCity = owner:GetCityByID(iOwningCity)
-				if not owningCity then
-					error("Plot is owned but no owningCity")		--I don't think this can happen
-				end
-				g_cityFollowerReligion[owningCity] = g_cityFollowerReligion[owningCity] or owningCity:GetReligiousMajority()
-				if g_cityFollowerReligion[owningCity] == RELIGION_CULT_OF_LEAVES then
-					g_cityUnimprovedForestJungle[owningCity] = (g_cityUnimprovedForestJungle[owningCity] or 0) + 1
-				end
-			end
-
-			--timber from recent chop
-			if turnChopped and turnChopped > gameTurn - 20 then		--integer here sets the durration of a "timber pile"
-				g_addResource[iOwner][RESOURCE_TIMBER] = (g_addResource[iOwner][RESOURCE_TIMBER] or 0) + (g_hasTechForestry[iOwner] and 2 or 1)
-			end
-
-			if resourceID ~= -1 and (improvementID ~= -1 or bIsCity) then
-				eaOwner.ImprovedResourcesByID[resourceID] = (eaOwner.ImprovedResourcesByID[resourceID] or 0) + 1				-- add to player count
-				
-				--building conversion (replace ivory counting below)
-				local resourceConvert = resourceBuildingConverts[resourceID]
-				if resourceConvert then
-					local workingCity = plot:GetWorkingCity()
-					if workingCity and workingCity:GetNumBuilding(resourceConvert.building) > 0 then
-						local newResourceID = resourceConvert.resource
-						g_addResource[iOwner][newResourceID] = (g_addResource[iOwner][newResourceID] or 0) + 1
+			
+				--Cult effects for owned plots
+				if terrainID == TERRAIN_DESERT then
+					g_cityFollowerReligion[owningCity] = g_cityFollowerReligion[owningCity] or owningCity:GetReligiousMajority()
+					if g_cityFollowerReligion[owningCity] == RELIGION_CULT_OF_CAHRA then
+						g_cityDesertCahraFollower[owningCity] = (g_cityDesertCahraFollower[owningCity] or 0) + 1
 					end
-				end				
+				elseif (featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE) and improvementID == -1 then
+					g_cityFollowerReligion[owningCity] = g_cityFollowerReligion[owningCity] or owningCity:GetReligiousMajority()
+					if g_cityFollowerReligion[owningCity] == RELIGION_CULT_OF_LEAVES then
+						g_cityUnimprovedForestJungle[owningCity] = (g_cityUnimprovedForestJungle[owningCity] or 0) + 1
+					end
+				end
+
+				--timber from recent chop
+				if turnChopped and turnChopped > gameTurn - 20 then		--integer here sets the durration of a "timber pile"
+					g_addResource[iOwner][RESOURCE_TIMBER] = (g_addResource[iOwner][RESOURCE_TIMBER] or 0) + (g_hasTechForestry[iOwner] and 2 or 1)
+				end
+
+				if resourceID ~= -1 and (improvementID ~= -1 or bIsCity) then
+					eaOwner.ImprovedResourcesByID[resourceID] = (eaOwner.ImprovedResourcesByID[resourceID] or 0) + 1				-- add to player count
+				
+					--building conversion (replace ivory counting below)
+					local resourceConvert = resourceBuildingConverts[resourceID]
+					if resourceConvert then
+						if owningCity:GetNumBuilding(resourceConvert.building) > 0 then
+							local newResourceID = resourceConvert.resource
+							g_addResource[iOwner][newResourceID] = (g_addResource[iOwner][newResourceID] or 0) + 1
+						end
+					end				
+				end
+			else
+				print("!!!! ERROR: owned plot appears to have no owning city! ", iOwner, plot:GetOwner())
 			end
 		end
 	end		--end of main plot loop
 
 	-- housekeeping
 	gg_animalSpawnPlots.pos = numAnimalSpawnPlots
-	MapModData.totalLivingTerrainStrength = Floor(totalLivingTerrainStrength)
+	MapModData.totalLivingTerrainStrength = floor(totalLivingTerrainStrength)
 	MapModData.harmonicMeanDenominator = harmonicMeanDenominator
 
 	gg_counts.grapeAndSpiritsBuildingsBakkheiaFollowerCities = gg_counts.grapeAndSpiritsBuildingsBakkheiaFollowerCities + grapesWorkedByBakkeiaFollower
@@ -1312,7 +1304,6 @@ function PlotsPerTurn()
 		g_cityFollowerReligion[city] = nil
 	end
 
-	--DoLivingTerrainSpread()
 	UseAccumulatedLivingTerrainEffects()
 end
 
@@ -1323,7 +1314,7 @@ end
 
 local function OnCityCanAcquirePlot(iPlayer, iCity, x, y)
 	--print("OnCityCanAcquirePlot ", iPlayer, iCity, x, y)
-	local plot = GetPlotFromXY(x,y)
+	local plot = GetPlotFromXY(x, y)
 	local featureID = plot:GetFeatureType()
 	if featureID ~= -1 and featureID ~= FEATURE_ICE and featureID ~= FEATURE_BLIGHT and featureID ~= FEATURE_FALLOUT then return true end	--atoll or any natural wonder is OK for border spread
 	if plot:IsWater() then
@@ -1334,6 +1325,51 @@ local function OnCityCanAcquirePlot(iPlayer, iCity, x, y)
 	return true
 end
 GameEvents.CityCanAcquirePlot.Add(OnCityCanAcquirePlot)
+
+function ListenerSerialEventHexCultureChanged(hexX, hexY, iPlayer, bUnknown)	--fires for all owned plots at game init too
+	if gg_init.bEnteredGame and iPlayer ~= -1 then
+		--print(string.format("Hex ownership change at hex coordinates: %d, %d for player: %d", hexX, hexY, iPlayer))
+
+		--Use this Events to make sure certain resources are owned by nearby city (if exists) rather than same-civ remote city; timing is not critical
+	
+		local x, y = ToGridFromHex( hexX, hexY )
+		local iPlot = GetPlotIndexFromXY(x, y)
+
+		if gg_remoteImprovePlot[iPlot] then
+			local plot = GetPlotFromXY(x, y)
+			--debug
+			if plot:GetOwner() ~= iPlayer then
+				error("plot:GetOwner() ~= iPlayer for SerialEventHexCultureChanged")
+			end
+
+			if plot:IsPlayerCityRadius(iPlayer) then
+				local iOwningCity = plot:GetCityPurchaseID()
+				local iPlotOwningCity = gg_playerCityPlotIndexes[iPlayer][iOwningCity]
+				if not iPlotOwningCity then
+					iPlotOwningCity = Players[iPlayer]:GetCityByID(iOwningCity):Plot():GetPlotIndex()
+					gg_playerCityPlotIndexes[iPlayer][iOwningCity] = iPlotOwningCity
+				end						
+				local ownerDist = GetMemoizedPlotIndexDistance(iPlot, iPlotOwningCity)
+				if 3 < ownerDist then	--it's close to a player city, but not the owning city; find closest and tranfer ownership
+					for loopPlot in PlotAreaSpiralIterator(plot, 3, 1, false, false, false) do
+						local city = loopPlot:GetPlotCity()
+						if city and city:GetOwner() == iPlayer then
+							print("SerialEventHexCultureChanged: Resource plot ownership being tranfered from remote city to nearby city")
+							plot:SetOwner(iPlayer, city:GetID())
+							break
+						end
+					end
+				else
+					print("SerialEventHexCultureChanged: Resource plot ownership verified to be for nearby city")
+				end
+			else
+				print("SerialEventHexCultureChanged: Resource plot ownership by remote city; no nearby city for same player")
+			end
+		end
+	end
+end
+Events.SerialEventHexCultureChanged.Add(ListenerSerialEventHexCultureChanged)
+
 
 local function OnBuildFinished(iPlayer, x, y, improvementID)		--improvementID for newly built only (e.g., -1 if this is a repair)
 	print("OnBuildFinished ", iPlayer, x, y, improvementID)

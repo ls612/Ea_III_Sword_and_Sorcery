@@ -49,8 +49,11 @@ local PROMOTION_EXTENDED_RANGE =					GameInfoTypes.PROMOTION_EXTENDED_RANGE
 local PROMOTION_DRUNKARD =							GameInfoTypes.PROMOTION_DRUNKARD
 local PROMOTION_STALLIONS_OF_EPONA =				GameInfoTypes.PROMOTION_STALLIONS_OF_EPONA
 local PROMOTION_STUNNED =							GameInfoTypes.PROMOTION_STUNNED
+local PROMOTION_STEEL_WEAPONS =						GameInfoTypes.PROMOTION_STEEL_WEAPONS
+local PROMOTION_MITHRIL_WEAPONS =					GameInfoTypes.PROMOTION_MITHRIL_WEAPONS
 local RELIGION_CULT_OF_EPONA =						GameInfoTypes.RELIGION_CULT_OF_EPONA
 local RESOURCE_CITRUS =								GameInfoTypes.RESOURCE_CITRUS
+local TECH_STEEL_WORKING = 							GameInfoTypes.TECH_STEEL_WORKING
 local UNITCOMBAT_MOUNTED = 							GameInfoTypes.UNITCOMBAT_MOUNTED
 local UNITCOMBAT_NAVAL =							GameInfoTypes.UNITCOMBAT_NAVAL
 local UNIT_FISHING_BOATS =							GameInfoTypes.UNIT_FISHING_BOATS
@@ -71,37 +74,29 @@ local Players =						Players
 local Teams =						Teams
 local MapModData =					MapModData
 local playerType =					MapModData.playerType
-local bFullCivAI =					MapModData.bFullCivAI
 local bHidden =						MapModData.bHidden
 local realCivs =					MapModData.realCivs
 local fullCivs =					MapModData.fullCivs
 local cityStates =					MapModData.cityStates
-local gg_bNormalCombatUnit =		gg_bNormalCombatUnit
+local gg_regularCombatType =		gg_regularCombatType
 local gg_combatPointDiff =			gg_combatPointDiff
 local gg_unitPrefixUnitIDs =		gg_unitPrefixUnitIDs
-local gg_cityLakesDistMatrix =		gg_cityLakesDistMatrix
-local gg_cityFishingDistMatrix =	gg_cityFishingDistMatrix
-local gg_cityWhalingDistMatrix =	gg_cityWhalingDistMatrix
-local gg_cityCampResDistMatrix =	gg_cityCampResDistMatrix
 local gg_fishingRange =				gg_fishingRange
 local gg_whalingRange =				gg_whalingRange
 local gg_campRange =				gg_campRange
 local gg_eaSpecial =				gg_eaSpecial
+local gg_unitTier =					gg_unitTier
 
 --localized functions
 local Rand = Map.Rand
-local Floor = math.floor
-local Distance = Map.PlotDistance
-local StrSubstitute = string.gsub
+local floor = math.floor
+local PlotDistance = Map.PlotDistance
+local gsub = string.gsub
 local GetPlotFromXY =			Map.GetPlot
 local PlotToRadiusIterator =	PlotToRadiusIterator
 local HandleError31 =			HandleError31
 
 --file functions
-local RemoveOwnedFishingResourcePlot
-local RemoveOwnedWhalePlot
-local RemoveOwnedLakePlot
-local RemoveOwnedCampPlot
 local UseUnit = {}
 local UseAIUnit = {}
 local SustainedPromotionDo = {}		--Function holder for sustained promotions (run each turn for each unit with promo)
@@ -265,7 +260,7 @@ function ConvertUnitsByMatch(iPlayer, fromStr, toStr)	--preserves race (e.g., UN
 		end
 		if bConvert then
 			local unitType = GameInfo.Units[unitTypeID].Type
-			local newUnitType = StrSubstitute(unitType, fromStr, toStr)
+			local newUnitType = gsub(unitType, fromStr, toStr)
 			local newUnitTypeID = GameInfoTypes[newUnitType]
 			local newUnit = player:InitUnit(newUnitTypeID, unit:GetX(), unit:GetY())
 			MapModData.bBypassOnCanSaveUnit = true
@@ -370,14 +365,14 @@ LuaEvents.EaUnitsDismissMercenary.Add(DismissMercenary)
 function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 	print("UnitPerCivTurn")
 	local Rand = Rand
-	local Floor = Floor
+	local floor = floor
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
 	local team = Teams[player:GetTeam()]
 	local bBarbs = iPlayer == BARB_PLAYER_INDEX
 	local bAnimals = iPlayer == ANIMALS_PLAYER_INDEX
-	local bFullCiv = fullCivs[iPlayer] ~= nil
-	local bAI = bFullCivAI[iPlayer] or not bFullCiv
+	local bFullCiv = fullCivs[iPlayer]
+	local bAI = not bFullCiv or not player:IsHuman()
 	local nameTraitID = bFullCiv and eaPlayer.eaCivNameID or -1
 	--local bMercenaryCityState = not bFullCiv and player:GetMinorCivTrait() == MINOR_TRAIT_MERCENARY
 
@@ -388,7 +383,8 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 	local bHorseMountedXP = nameTraitID == EACIV_IKKOS
 	local bHorseMountedStrongMerc = nameTraitID == EACIV_HIPPUS
 	local bRemoveOceanBlock = bFullCiv and eaPlayer.eaCivNameID == EACIV_FOMHOIRE
-
+	local bHasSteelWorking = team:IsHasTech(TECH_STEEL_WORKING)
+	local bHasMithrilWorking = team:IsHasTech(TECH_MITHRIL_WORKING)
 	local iLongWallOwner = gWonders[EA_WONDER_THE_LONG_WALL] and Map.GetPlotByIndex(gWonders[EA_WONDER_THE_LONG_WALL].iPlot):GetOwner()
 	local bMayBeSlowedByLongWall = iLongWallOwner and team:IsAtWar(Players[iLongWallOwner]:GetTeam())
 	local longWallMod = iLongWallOwner and gWonders[EA_WONDER_THE_LONG_WALL].mod
@@ -405,13 +401,13 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 		local iPlot = plot:GetPlotIndex()
 		local iPlotOwner = plot:GetOwner()
 		local unitTypeID = unit:GetUnitType()
+		local iPerson = unit:GetPersonIndex()	-- -1 if not a GP
 
 		--Debug
 		if unitTypeID == 0 then
 			error("Found an ID=0 unit; most likely there was a player:UnitInit() with an invalid unitTypeID")
 		end
-		if unit:IsGreatPerson() and not unit:IsDelayedDeath() then
-			local iPerson = unit:GetPersonIndex()
+		if iPerson ~= -1 and not unit:IsDelayedDeath() then
 			if not gPeople[iPerson] then
 				error("!!!! WARNING: Found an orphan GP; iPlayer, unitTypeID, iPlot = " .. iPlayer .. ", " .. GameInfo.Units[unitTypeID].Type .. ", " .. iPlot)
 			end
@@ -422,140 +418,194 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 			unit:FinishMoves()
 			unit:SetHasPromotion(PROMOTION_STUNNED, false)
 		end
-		
-		if bAnimals then
+
+		if iPerson ~= -1 then
+
+			--GP stuff
+			local eaPerson = gPeople[iPerson]
+			if not eaPerson then
+				MissingEaPersonHasUnit(iPerson, unit)
+			else
+
+				--Warrior gains best movement from adjacent/same-plot "troops" units (TO DO: this will become an automatic conversion to mounted GP unit)
+				if eaPerson.class1 == "Warrior" or eaPerson.class2 == "Warrior" then
+					local bestMoves = 120
+					for loopPlot in AdjacentPlotIterator(plot, false, true) do
+						local unitCount = loopPlot:GetNumUnits()
+						for i = 0, unitCount - 1 do
+							local loopUnit = loopPlot:GetUnit(i)
+							local loopUnitTypeID = loopUnit:GetUnitType()
+							if gg_regularCombatType[loopUnitTypeID] == "troops" then
+								local moves = loopUnit:GetMoves()
+								if bestMoves < moves then
+									bestMoves = moves
+								end
+							end
+						end
+					end
+					if bestMoves > 120 and unit:GetMoves() >= 120 then	--make sure GP has normal movement at turn start (isn't restricted by some spell)
+						print("Giving Warrior extra movement from troops ", bestMoves)
+						unit:SetMoves(bestMoves)
+					end
+				end
+			end
+		else
+	
+			--non-GP stuff
+			if bAnimals then
 			--
-		elseif bBarbs then
-			if faithMaintenance[unitTypeID] then
-				UseManaOrDivineFavor(BARB_PLAYER_INDEX, nil, faithMaintenance[unitTypeID], true, plot)
-			end
-		else	--Full civs and city states
-			if faithMaintenance[unitTypeID] then
-				UseManaOrDivineFavor(iPlayer, nil, faithMaintenance[unitTypeID], false, plot)
-			end
+			elseif bBarbs then
+				if faithMaintenance[unitTypeID] then
+					UseManaOrDivineFavor(BARB_PLAYER_INDEX, nil, faithMaintenance[unitTypeID], true, plot)
+				end
+			else	--Full civs and city states
+				if faithMaintenance[unitTypeID] then
+					UseManaOrDivineFavor(iPlayer, nil, faithMaintenance[unitTypeID], false, plot)
+				end
 
 
-			local bSlave
-			local bMercenary
+				local bSlave
+				local bMercenary
 
-			if gg_bNormalCombatUnit[unitTypeID] then
-				countCombatUnits = countCombatUnits + 1
+				if gg_regularCombatType[unitTypeID] then
+					countCombatUnits = countCombatUnits + 1
 
-				bSlave = unit:IsHasPromotion(PROMOTION_SLAVE)
-				bMercenary = unit:IsHasPromotion(PROMOTION_MERCENARY)
+					bSlave = unit:IsHasPromotion(PROMOTION_SLAVE)
+					bMercenary = unit:IsHasPromotion(PROMOTION_MERCENARY)
 
-				--Morale decays toward baseline (= civ happiness; -30 for slaves; 0 for mercenary; -20 for merc at war with original owner)
-				local baselineMoral = playerHappiness
-				if bSlave then
-					baselineMoral = -30
-				else
-					if bMercenary then
-						if team:IsAtWar(Players[unit:GetOriginalOwner()]:GetTeam()) then	--TO DO: check that this is safe for killed civ
-							baselineMoral = -20
-						else
-							baselineMoral = 0
+					--Morale decays toward baseline (= civ happiness; -30 for slaves; 0 for mercenary; -20 for merc at war with original owner)
+					local baselineMoral = playerHappiness
+					if bSlave then
+						baselineMoral = -30
+					else
+						if bMercenary then
+							if team:IsAtWar(Players[unit:GetOriginalOwner()]:GetTeam()) then	--TO DO: check that this is safe for killed civ
+								baselineMoral = -20
+							else
+								baselineMoral = 0
+							end
+						elseif bHasWarspirit then
+							baselineMoral = baselineMoral + 10
+							if bHasBerserkerRage then
+								baselineMoral = baselineMoral + floor(unit:GetDamage() / 2)
+							end
 						end
-					elseif bHasWarspirit then
-						baselineMoral = baselineMoral + 10
-						if bHasBerserkerRage then
-							baselineMoral = baselineMoral + Floor(unit:GetDamage() / 2)
+						if unit:IsHasPromotion(PROMOTION_DRUNKARD) then
+							baselineMoral = baselineMoral + 10
 						end
 					end
-					if unit:IsHasPromotion(PROMOTION_DRUNKARD) then
-						baselineMoral = baselineMoral + 10
+					if bMoraleFloor and baselineMoral < -15 then
+						baselineMoral = -15
 					end
-				end
-				if bMoraleFloor and baselineMoral < -15 then
-					baselineMoral = -15
-				end
 				
-				unit:DecayMorale(baselineMoral)
+					unit:DecayMorale(baselineMoral)
 
-				--combat unit level promotions
-				if unitTypeID == UNIT_GREAT_BOMBARDE and 4 < unit:GetLevel() then
-					unit:SetHasPromotion(PROMOTION_EXTENDED_RANGE, true)
+					--combat unit level promotions
+					if unitTypeID == UNIT_GREAT_BOMBARDE and 4 < unit:GetLevel() then
+						unit:SetHasPromotion(PROMOTION_EXTENDED_RANGE, true)
+					end
+				elseif gg_eaSpecial[unitTypeID] == "Undead" then
+					local iSummoner = unit:GetSummonerIndex()
+					if iSummoner == -99 or not gPeople[iSummoner] then
+						local dice = Rand(15, "hello")
+						if dice == 0 then
+							local spawnPlot = GetPlotForSpawn(plot, BARB_PLAYER_INDEX, 2, false, false, false, false, false, false, unit)
+							if spawnPlot then
+								local x, y = spawnPlot:GetXY()
+								MapModData.bBypassOnCanSaveUnit = true
+								local newUnit = Players[BARB_PLAYER_INDEX]:InitUnit(unitTypeID, x, y)
+								newUnit:Convert(unit, false)
+								iUnit = newUnit:GetID()
+								unit = newUnit			
+								spawnPlot:AddFloatUpMessage("Unbound dead has gone hostile!", 1)
+							else
+								MapModData.bBypassOnCanSaveUnit = true
+								unit:Kill(true, -1)
+								plot:AddFloatUpMessage("Unbound dead has un-animated", 1)						
+							end
+						--elseif dice < 3 then
+						--	MapModData.bBypassOnCanSaveUnit = true
+						--	unit:Kill(true, -1)
+						--	plot:AddFloatUpMessage("Unbound dead has un-animated", 1)
+						end				
+					end
 				end
-			elseif gg_eaSpecial[unitTypeID] == "Undead" then
-				local iSummoner = unit:GetSummonerIndex()
-				if iSummoner == -99 or not gPeople[iSummoner] then
-					local dice = Rand(15, "hello")
-					if dice == 0 then
-						local spawnPlot = GetPlotForSpawn(plot, BARB_PLAYER_INDEX, 2, false, false, false, false, false, false, unit)
-						if spawnPlot then
-							local x, y = spawnPlot:GetXY()
-							MapModData.bBypassOnCanSaveUnit = true
-							local newUnit = Players[BARB_PLAYER_INDEX]:InitUnit(unitTypeID, x, y)
-							newUnit:Convert(unit, false)
-							iUnit = newUnit:GetID()
-							unit = newUnit			
-							spawnPlot:AddFloatUpMessage("Unbound dead has gone hostile!", 1)
-						else
-							MapModData.bBypassOnCanSaveUnit = true
-							unit:Kill(true, -1)
-							plot:AddFloatUpMessage("Unbound dead has un-animated", 1)						
+
+				--Steel/Mithril Weopons
+				if bHasSteelWorking and gg_regularCombatType[unitTypeID] == "troops" then
+					if bHasMithrilWorking and gg_unitTier[unitTypeID] and 4 < gg_unitTier[unitTypeID] then
+						if not unit:IsHasPromotion(PROMOTION_MITHRIL_WEAPONS) then
+							if unit:IsHasPromotion(PROMOTION_STEEL_WEAPONS) then
+								unit:SetHasPromotion(PROMOTION_STEEL_WEAPONS, false)
+								unit:SetBaseCombatStrength(unit:GetBaseCombatStrength() + 2)
+							else
+								unit:SetBaseCombatStrength(unit:GetBaseCombatStrength() + 4)
+							end
+							unit:SetHasPromotion(PROMOTION_MITHRIL_WEAPONS, true)
 						end
-					--elseif dice < 3 then
-					--	MapModData.bBypassOnCanSaveUnit = true
-					--	unit:Kill(true, -1)
-					--	plot:AddFloatUpMessage("Unbound dead has un-animated", 1)
-					end				
+					elseif gg_unitTier[unitTypeID] and 2 < gg_unitTier[unitTypeID] then
+						if not unit:IsHasPromotion(PROMOTION_STEEL_WEAPONS) and not unit:IsHasPromotion(PROMOTION_MITHRIL_WEAPONS) then
+							unit:SetBaseCombatStrength(unit:GetBaseCombatStrength() + 2)
+							unit:SetHasPromotion(PROMOTION_STEEL_WEAPONS, true)
+						end
+					end
 				end
-			end
 
-			--unit type or civ effects
-			local unitDomainTypeID = unit:GetDomainType()
-			if UseUnit[unitTypeID] then							--functions for units that are used up (like caravans, fishing boats, etc)
-				UseUnit[unitTypeID](iPlayer, unit)
-			elseif UseAIUnit[unitTypeID] then	
-				if bAI then		
-					UseAIUnit[unitTypeID](iPlayer, unit)
-				end
-			elseif unitDomainTypeID == DOMAIN_SEA then
-				--scurvy
-				if bNoCitrus then
-					local bScurvy = true
-					if iPlotOwner ~= -1 then
-						if iPlotOwner == iPlayer then
-							bScurvy = false
-						elseif fullCivs[iPlotOwner] then	--friendship
-							if player:IsFriends(iPlotOwner) then bScurvy = false end
-						elseif cityStates[iPlotOwner] then		--CS ally
-							if Players[iPlotOwner]:GetAlly() == iPlayer then bScurvy = false end
+				--unit type or civ effects
+				local unitDomainTypeID = unit:GetDomainType()
+				if UseUnit[unitTypeID] then							--functions for units that are used up (like caravans, fishing boats, etc)
+					UseUnit[unitTypeID](iPlayer, unit)
+				elseif UseAIUnit[unitTypeID] then	
+					if bAI then		
+						UseAIUnit[unitTypeID](iPlayer, unit)
+					end
+				elseif unitDomainTypeID == DOMAIN_SEA then
+					--scurvy
+					if bNoCitrus then
+						local bScurvy = true
+						if iPlotOwner ~= -1 then
+							if iPlotOwner == iPlayer then
+								bScurvy = false
+							elseif fullCivs[iPlotOwner] then	--friendship
+								if player:IsFriends(iPlotOwner) then bScurvy = false end
+							elseif cityStates[iPlotOwner] then		--CS ally
+								if Players[iPlotOwner]:GetAlly() == iPlayer then bScurvy = false end
+							end	
 						end	
-					end	
-					if bScurvy and Rand(100, "scurvy") < 15 then	--15% chance for damage (but never reduced below 1 hp)
-						unit:GetPlot():AddFloatUpMessage("Damaged by Scurvy!", 2)
-						local currentHP = unit:GetCurrHitPoints()
-						if currentHP < 11 then
-							unit:SetDamage(unit:GetDamage() + currentHP - 1, -1)	--, iPlayer, true?
-						else
-							unit:SetDamage(10, -1)
+						if bScurvy and Rand(100, "scurvy") < 15 then	--15% chance for damage (but never reduced below 1 hp)
+							unit:GetPlot():AddFloatUpMessage("Damaged by Scurvy!", 2)
+							local currentHP = unit:GetCurrHitPoints()
+							if currentHP < 11 then
+								unit:SetDamage(unit:GetDamage() + currentHP - 1, -1)	--, iPlayer, true?
+							else
+								unit:SetDamage(10, -1)
+							end
 						end
 					end
-				end
-				if unitCombatTypeID == UNITCOMBAT_NAVAL then
-					if bRemoveOceanBlock then
-						unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE_UNTIL_ASTRONOMY, false)
-						unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE, false)
+					if unitCombatTypeID == UNITCOMBAT_NAVAL then
+						if bRemoveOceanBlock then
+							unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE_UNTIL_ASTRONOMY, false)
+							unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE, false)
+						end
+					end
+				elseif bHorseMounted[unitTypeID] then
+					if unit:IsHasPromotion(PROMOTION_STALLIONS_OF_EPONA) then
+						gg_counts.stallionsOfEpona = gg_counts.stallionsOfEpona + 1
+					end
+					if bHorseMountedXP then
+						local dice = Rand(5, "hello there!")
+						if dice == 0 then
+							unit:ChangeExperience(1)
+							print("IKKOS applied xp to mounted")
+							eaPlayer.classPoints[5] = eaPlayer.classPoints[5] + 1		--Warrior
+						end
+					end
+					if bHorseMountedStrongMerc and not (bSlave or bMercenary) then
+						unit:SetHasPromotion(PROMOTION_STRONG_MERCENARY_INACTIVE, true)
 					end
 				end
-			elseif bHorseMounted[unitTypeID] then
-				if unit:IsHasPromotion(PROMOTION_STALLIONS_OF_EPONA) then
-					gg_counts.stallionsOfEpona = gg_counts.stallionsOfEpona + 1
-				end
-				if bHorseMountedXP then
-					local dice = Rand(5, "hello there!")
-					if dice == 0 then
-						unit:ChangeExperience(1)
-						print("IKKOS applied xp to mounted")
-						eaPlayer.classPoints[5] = eaPlayer.classPoints[5] + 1		--Warrior
-					end
-				end
-				if bHorseMountedStrongMerc and not (bSlave or bMercenary) then
-					unit:SetHasPromotion(PROMOTION_STRONG_MERCENARY_INACTIVE, true)
-				end
-			end
 
+			end
 		end
 
 
@@ -612,12 +662,12 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 			eaPlayer.trainingXP = (eaPlayer.trainingXP or 0) + player:GetTotalJONSCulturePerTurn() / 3
 		end
 		if eaPlayer.trainingXP and 10 < eaPlayer.trainingXP and 0 < countCombatUnits then
-			local distributeXP = Floor(eaPlayer.trainingXP / countCombatUnits)
+			local distributeXP = floor(eaPlayer.trainingXP / countCombatUnits)
 			if 0 < distributeXP then
 				print("Adding XP to combat units for Training Exercises Process and/or Militarism Finisher (#units / unitXP): ", countCombatUnits, distributeXP)
 				for unit in player:Units() do
 					local unitTypeID = unit:GetUnitType()
-					if gg_bNormalCombatUnit[unitTypeID] then
+					if gg_regularCombatType[unitTypeID] then
 						unit:ChangeExperience(distributeXP)
 					end
 				end				
@@ -644,12 +694,13 @@ local function OnUnitTakingPromotion(iPlayer, iUnit, promotionID)
 				eaPerson[prefix] = level
 			end
 			if eaPerson.assumedLeadershipTurn then
-				eaPerson.leaderLevel = Floor((Game.GetGameTurn() - eaPerson.assumedLeadershipTurn) / 20)	--intentional that this only updates w/ leveling (game interest and works better for mod caching)
+				eaPerson.leaderLevel = floor((Game.GetGameTurn() - eaPerson.assumedLeadershipTurn) / 20)	--intentional that this only updates w/ leveling (game interest and works better for mod caching)
 			end
 			eaPerson.level = unit:GetLevel()
 			--eaPerson.promotions[promotionID] = true
 
 			SetTowerMods(iPlayer, iPerson)
+			unit:SetBaseCombatStrength(GetGPMod(iPerson, "EAMOD_COMBAT"))
 		end
 		return true		--allow whatever human player picks
 	else	--AI
@@ -657,12 +708,13 @@ local function OnUnitTakingPromotion(iPlayer, iUnit, promotionID)
 			local eaPerson = gPeople[iPerson]
 			promotionID = AIPickGPPromotion(iPlayer, iPerson, unit)
 			if eaPerson.assumedLeadershipTurn then
-				eaPerson.leaderLevel = Floor((Game.GetGameTurn() - eaPerson.assumedLeadershipTurn) / 20)
+				eaPerson.leaderLevel = floor((Game.GetGameTurn() - eaPerson.assumedLeadershipTurn) / 20)
 			end
 			eaPerson.level = unit:GetLevel()
 			--eaPerson.promotions[promotionID] = true
 
 			SetTowerMods(iPlayer, iPerson)
+			unit:SetBaseCombatStrength(GetGPMod(iPerson, "EAMOD_COMBAT"))
 			return false				--We are cancelling whatever dll picked for GP
 		else
 			return true
@@ -699,135 +751,168 @@ end
 -- File Functions
 --------------------------------------------------------------
 
---fishing and whaling boats
-UseUnit[GameInfoTypes.UNIT_FISHING_BOATS] = function(iPlayer, unit)
-	print("Running UseFishingBoats ", iPlayer, unit)
-	--priority is water resource w/in 3-radius, then lake w/in 3, then water resource (by distance)
-	local plot = unit:GetPlot()
-	local city = plot:GetPlotCity()
-	if not city then
-		error("Found fishing boat that was not in city")
-	end
-	local iCity = city:GetID()
-	local iPlot = plot:GetPlotIndex()
-	local eaCity = gCities[iPlot]
-	local fishingResources = gg_cityFishingDistMatrix[iPlayer][iCity]
-	local iNearestResourcePlot
-	local nearestResourceDist = 10000
-	if fishingResources then
-		for iPlot, distance in pairs(fishingResources) do
-			if distance < nearestResourceDist then
-				nearestResourceDist = distance
-				iNearestResourcePlot = iPlot
-			end
-		end
-	end
-	print("Nearest fishing resource distance = ", nearestResourceDist)
-	if 3 < nearestResourceDist and gg_cityLakesDistMatrix[iPlayer][iCity] then	--use available lake
-		print("Use lake instead")
-		local lakes = gg_cityLakesDistMatrix[iPlayer][iCity]
-		local iNearestLakePlot
-		local nearestDist = 4
-		for iPlot, distance in pairs(lakes) do
-			if distance < nearestDist then
-				nearestDist = distance
-				iNearestLakePlot = iPlot
-			end
-		end
-		print("Nearest lake distance = ", nearestDist)
-		local lakePlot = Map.GetPlotByIndex(iNearestLakePlot)
-		lakePlot:SetOwner(iPlayer, iCity)
-		lakePlot:SetImprovementType(IMPROVEMENT_FISHING_BOATS)
-		RemoveOwnedLakePlot(iNearestLakePlot, iPlayer, iCity)
-		--Do notification and special effect
-	elseif nearestResourceDist <= gg_fishingRange[iPlayer] then		--improve resource
-		local resourcePlot = Map.GetPlotByIndex(iNearestResourcePlot)
-		resourcePlot:SetOwner(iPlayer, iCity)
-		resourcePlot:SetImprovementType(IMPROVEMENT_FISHING_BOATS)
-		RemoveOwnedFishingResourcePlot(iNearestResourcePlot, iPlayer, iCity)
-		if 3 < nearestResourceDist then
-			eaCity.remotePlots[iNearestResourcePlot] = true
-		end
-		--Do notification and special effect
-
-	else
-		print("!!!! Warning: Fishingboats built but can't be used")
-	end
-	MapModData.bBypassOnCanSaveUnit = true
-	unit:Kill(true, -1)		--remove fishing boats unit
-end
-
-UseUnit[GameInfoTypes.UNIT_WHALING_BOATS] = function(iPlayer, unit)
-	print("Running UseWhalingBoats ", iPlayer, unit)
-	--priority is simply closest available by distance (there are no lake whales)
-	local plot = unit:GetPlot()
-	local city = plot:GetPlotCity()
-	if not city then
-		error("Found fishing boat that was not in city")
-	end
-	local iCity = city:GetID()
-	local iPlot = plot:GetPlotIndex()
-	local eaCity = gCities[iPlot]
-	local whales = gg_cityWhalingDistMatrix[iPlayer][iCity]
-	local iNearestWhalePlot
-	local nearestWhaleDist = 10000
-	if whales then
-		for iPlot, distance in pairs(whales) do
-			if distance < nearestWhaleDist then
-				nearestWhaleDist = distance
-				iNearestWhalePlot = iPlot
-			end
-		end
-	end
-	if nearestWhaleDist <= gg_whalingRange[iPlayer] then
-		local whalePlot = Map.GetPlotByIndex(iNearestWhalePlot)
-		whalePlot:SetOwner(iPlayer, iCity)
-		whalePlot:SetImprovementType(IMPROVEMENT_WHALING_BOATS)
-		RemoveOwnedWhalePlot(iNearestWhalePlot, iPlayer, iCity)
-		if 3 < nearestWhaleDist then
-			eaCity.remotePlots[iNearestWhalePlot] = true
-		end
-		--Do notification and special effect
-	else
-		print("!!!! Warning: Whaling Boats built but can't be used")
-	end
-	MapModData.bBypassOnCanSaveUnit = true
-	unit:Kill(true, -1)		--remove whaling boats unit
-end
-
 UseUnit[GameInfoTypes.UNIT_HUNTERS] = function(iPlayer, unit)
-	print("Running UseHunters ", iPlayer, unit)
+	print("Running Running UseUnit - Hunters ", iPlayer, unit)
 	--priority is closest available by distance
 	local plot = unit:GetPlot()
+	local iPlot = plot:GetPlotIndex()
 	local city = plot:GetPlotCity()
 	if not city then
 		error("Found Hunters that was not in city")
 	end
-	local iCity = city:GetID()
-	local iPlot = plot:GetPlotIndex()
-	local eaCity = gCities[iPlot]
-	local campResources = gg_cityCampResDistMatrix[iPlayer][iCity]
-	local iNearestCampResPlot
-	local nearestCampResDist = 10000
-	if campResources then
-		for iPlot, distance in pairs(campResources) do
-			if distance < nearestCampResDist then
-				nearestCampResDist = distance
-				iNearestCampResPlot = iPlot
-			end						--need to add prioritization or randomization for ties
+	local sector = Rand(6, "hello") + 1
+	local plotToImprove
+	for radius = 1, gg_campRange[iPlayer] do
+		for testPlot in PlotRingIterator(plot, radius, sector, false) do
+			local iTestPlot = testPlot:GetPlotIndex()
+			if gg_remoteImprovePlot[iTestPlot] == "HuntingRes" then
+				local iOwner = testPlot:GetOwner()
+				if iOwner == -1 then
+					print("-gaining/improving unowned plot ", testPlot:GetPlotIndex())
+					testPlot:SetOwner(iPlayer, city:GetID())
+					plotToImprove = testPlot
+					break
+				elseif iOwner == iPlayer and testPlot:GetImprovementType() == -1 then
+					print("-improving already owned plot ", testPlot:GetPlotIndex())
+					plotToImprove = testPlot
+					break
+				end
+				if radius < 4 then	--may steal plot if owner is remote
+					local iOwningCity = testPlot:GetCityPurchaseID()
+					local iPlotOwningCity = gg_playerCityPlotIndexes[iOwner][iOwningCity] or InitCityPlotIndexGlobals(iOwner, iOwningCity)			
+					local ownerDist = GetMemoizedPlotIndexDistance(iTestPlot, iPlotOwningCity)
+					if 3 < ownerDist then
+						if iOwner == iPlayer then
+							print("-transfering ownership of plot from distant to nearby city ", testPlot:GetPlotIndex())
+							testPlot:SetOwner(iPlayer, city:GetID())	--transfer ownership to this city (should have happen elsewhere, but just in case)
+						else
+							print("-stealing plot from distant foreign city to nearby own city ", testPlot:GetPlotIndex())
+							testPlot:SetOwner(iPlayer, city:GetID())
+							plotToImprove = testPlot		--steal from remote owner city
+							break
+						end				
+					end
+				end
+			end
 		end
+		if plotToImprove then break end
 	end
-	if nearestCampResDist <= gg_campRange[iPlayer] then
-		local campPlot = Map.GetPlotByIndex(iNearestCampResPlot)
-		campPlot:SetOwner(iPlayer, iCity)
-		campPlot:SetImprovementType(IMPROVEMENT_CAMP)
-		RemoveOwnedCampPlot(iNearestCampResPlot, iPlayer, iCity)
-		if 3 < nearestCampResDist then
-			eaCity.remotePlots[iNearestCampResPlot] = true
-		end
-		--Do notification and special effect
+	if plotToImprove then
+		plotToImprove:SetImprovementType(IMPROVEMENT_CAMP)
 	else
-		print("!!!! Warning: Hunters built but can't be used")
+		print("!!!! Warning: Hunters built but can't be used; killing unit")
+	end
+	MapModData.bBypassOnCanSaveUnit = true
+	unit:Kill(true, -1)		--remove unit
+end
+
+UseUnit[GameInfoTypes.UNIT_FISHING_BOATS] = function(iPlayer, unit)
+	print("Running UseUnit - Fishing Boats ", iPlayer, unit)
+	--priority is closest available by distance
+	local plot = unit:GetPlot()
+	local iPlot = plot:GetPlotIndex()
+	local city = plot:GetPlotCity()
+	if not city then
+		error("Found Fishing Boats that was not in city")
+	end
+	local bCoastal = gg_cityPlotCoastalTest[iPlot]
+	local range = bCoastal and gg_fishingRange[iPlayer] or 3
+	local sector = Rand(6, "hello") + 1
+	local plotToImprove
+	for radius = 1, range do
+		for testPlot in PlotRingIterator(plot, radius, sector, false) do
+			local iTestPlot = testPlot:GetPlotIndex()
+			if (bCoastal and gg_remoteImprovePlot[iTestPlot] == "FishingRes") or (radius < 4 and gg_remoteImprovePlot[iTestPlot] == "Lake") then
+				local iOwner = testPlot:GetOwner()
+				if iOwner == -1 then
+					print("-gaining/improving unowned plot ", testPlot:GetPlotIndex())
+					testPlot:SetOwner(iPlayer, city:GetID())
+					plotToImprove = testPlot
+					break
+				elseif iOwner == iPlayer and testPlot:GetImprovementType() == -1 then
+					print("-improving already owned plot ", testPlot:GetPlotIndex())
+					plotToImprove = testPlot
+					break
+				end
+				if radius < 4 and gg_remoteImprovePlot[iTestPlot] == "FishingRes" then	--may steal plot if owner is remote
+					local iOwningCity = testPlot:GetCityPurchaseID()
+					local iPlotOwningCity = gg_playerCityPlotIndexes[iOwner][iOwningCity] or InitCityPlotIndexGlobals(iOwner, iOwningCity)			
+					local ownerDist = GetMemoizedPlotIndexDistance(iTestPlot, iPlotOwningCity)
+					if 3 < ownerDist then
+						if iOwner == iPlayer then
+							print("-transfering ownership of plot from distant to nearby city ", testPlot:GetPlotIndex())
+							testPlot:SetOwner(iPlayer, city:GetID())	--transfer ownership to this city (should have happen elsewhere, but just in case)
+						else
+							print("-stealing plot from distant foreign city to nearby own city ", testPlot:GetPlotIndex())
+							testPlot:SetOwner(iPlayer, city:GetID())
+							plotToImprove = testPlot		--steal from remote owner city
+							break
+						end				
+					end
+				end
+			end
+		end
+		if plotToImprove then break end
+	end
+	if plotToImprove then
+		plotToImprove:SetImprovementType(IMPROVEMENT_FISHING_BOATS)
+	else
+		print("!!!! Warning: Whaling Boats built but can't be used; killing unit")
+	end
+	MapModData.bBypassOnCanSaveUnit = true
+	unit:Kill(true, -1)		--remove unit
+end
+
+UseUnit[GameInfoTypes.UNIT_WHALING_BOATS] = function(iPlayer, unit)
+	print("Running UseUnit - Whaling Boats ", iPlayer, unit)
+	--priority is closest available by distance
+	local plot = unit:GetPlot()
+	local iPlot = plot:GetPlotIndex()
+	local city = plot:GetPlotCity()
+	if not city then
+		error("Found Whaling Boats that was not in city")
+	end
+	local sector = Rand(6, "hello") + 1
+	local plotToImprove
+	for radius = 1, gg_whalingRange[iPlayer] do
+		for testPlot in PlotRingIterator(plot, radius, sector, false) do
+			local iTestPlot = testPlot:GetPlotIndex()
+			if gg_remoteImprovePlot[iTestPlot] == "WhalingRes" then
+				local iOwner = testPlot:GetOwner()
+				if iOwner == -1 then
+					print("-gaining/improving unowned plot ", testPlot:GetPlotIndex())
+					testPlot:SetOwner(iPlayer, city:GetID())
+					plotToImprove = testPlot
+					break
+				elseif iOwner == iPlayer and testPlot:GetImprovementType() == -1 then
+					print("-improving already owned plot ", testPlot:GetPlotIndex())
+					plotToImprove = testPlot
+					break
+				end
+				if radius < 4 then	--may steal plot if owner is remote
+					local iOwningCity = testPlot:GetCityPurchaseID()
+					local iPlotOwningCity = gg_playerCityPlotIndexes[iOwner][iOwningCity] or InitCityPlotIndexGlobals(iOwner, iOwningCity)		
+					local ownerDist = GetMemoizedPlotIndexDistance(iTestPlot, iPlotOwningCity)
+					if 3 < ownerDist then
+						if iOwner == iPlayer then
+							print("-transfering ownership of plot from distant to nearby city ", testPlot:GetPlotIndex())
+							testPlot:SetOwner(iPlayer, city:GetID())	--transfer ownership to this city (should have happen elsewhere, but just in case)
+						else
+							print("-stealing plot from distant foreign city to nearby own city ", testPlot:GetPlotIndex())
+							testPlot:SetOwner(iPlayer, city:GetID())
+							plotToImprove = testPlot		--steal from remote owner city
+							break
+						end				
+					end
+				end
+			end
+		end
+		if plotToImprove then break end
+	end
+	if plotToImprove then
+		plotToImprove:SetImprovementType(IMPROVEMENT_WHALING_BOATS)
+	else
+		print("!!!! Warning: Whaling Boats built but can't be used; killing unit")
 	end
 	MapModData.bBypassOnCanSaveUnit = true
 	unit:Kill(true, -1)		--remove unit
@@ -866,80 +951,6 @@ UseAIUnit[GameInfoTypes.UNIT_CARGO_SHIP] = function(iPlayer, unit)
 end
 ]]
 
-RemoveOwnedFishingResourcePlot = function(iPlot, iOwnerPlayer, iOwnerCity)
-	for iPlayer in pairs(realCivs) do
-		for city in Players[iPlayer]:Cities() do
-			local iCity = city:GetID()
-			local fishingResources = gg_cityFishingDistMatrix[iPlayer][iCity]
-			if fishingResources and fishingResources[iPlot] then
-				if 3 < fishingResources[iPlot] or (iPlayer == iOwnerPlayer and iCity == iOwnerCity) then
-					fishingResources[iPlot] = nil
-					if next(fishingResources) == nil then		--table empty
-						gg_cityFishingDistMatrix[iPlayer][iCity] = nil
-					end
-				end
-			end
-		end
-	end
-	for _, eaCity in pairs(gCities) do
-		eaCity.remotePlots[iPlot] = nil					--remove from all here; will be added to new owner after this function
-	end
-end
-
-RemoveOwnedWhalePlot = function(iPlot, iOwnerPlayer, iOwnerCity)
-	for iPlayer in pairs(realCivs) do
-		for city in Players[iPlayer]:Cities() do
-			local iCity = city:GetID()
-			local whales = gg_cityWhalingDistMatrix[iPlayer][iCity]
-			if whales and whales[iPlot] then
-				if 3 < whales[iPlot] or (iPlayer == iOwnerPlayer and iCity == iOwnerCity) then
-					whales[iPlot] = nil
-					if next(whales) == nil then		--table empty
-						gg_cityWhalingDistMatrix[iPlayer][iCity] = nil
-					end
-				end
-			end
-		end
-	end
-	for _, eaCity in pairs(gCities) do
-		eaCity.remotePlots[iPlot] = nil					--remove from all here; will be added to new owner after this function
-	end
-end
-
-RemoveOwnedLakePlot = function(iPlot, iOwnerPlayer, iOwnerCity)
-	for iPlayer in pairs(realCivs) do
-		for city in Players[iPlayer]:Cities() do
-			local iCity = city:GetID()
-			local lakes = gg_cityLakesDistMatrix[iPlayer][iCity]
-			if lakes and lakes[iPlot] then
-				lakes[iPlot] = nil
-				if next(lakes) == nil then		--table empty
-					gg_cityLakesDistMatrix[iPlayer][iCity] = nil
-				end
-			end
-		end
-	end
-end
-
-RemoveOwnedCampPlot = function(iPlot, iOwnerPlayer, iOwnerCity)
-	for iPlayer in pairs(realCivs) do
-		for city in Players[iPlayer]:Cities() do
-			local iCity = city:GetID()
-			local campResources = gg_cityCampResDistMatrix[iPlayer][iCity]
-			if campResources and campResources[iPlot] then
-				if 3 < campResources[iPlot] or (iPlayer == iOwnerPlayer and iCity == iOwnerCity) then
-					campResources[iPlot] = nil
-					if next(campResources) == nil then		--table empty
-						gg_cityCampResDistMatrix[iPlayer][iCity] = nil
-					end
-				end
-			end
-		end
-	end
-	for _, eaCity in pairs(gCities) do
-		eaCity.remotePlots[iPlot] = nil					--remove from all here; will be added to new owner after this function
-	end
-end
 
 --sustained promotion system
 
@@ -980,7 +991,7 @@ SustainedPromotionDo[GameInfoTypes.PROMOTION_RIDE_LIKE_THE_WINDS] = function(pla
 	if not eaPerson then return false end	--caster died
 	local mod = GetGPMod(iCaster, "EAMOD_DEVOTION", "EAMOD_CONJURATION")
 	local caster = Players[eaPerson.iPlayer]:GetUnitByID(eaPerson.iUnit)
-	if mod < Distance(caster:GetX(), caster:GetY(), unit:GetX(), unit:GetY()) then return false end
+	if mod < PlotDistance(caster:GetX(), caster:GetY(), unit:GetX(), unit:GetY()) then return false end
 	return UseManaOrDivineFavor(eaPerson.iPlayer, iCaster, 1)
 end
 

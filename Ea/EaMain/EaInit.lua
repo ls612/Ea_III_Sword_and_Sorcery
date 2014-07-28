@@ -4,11 +4,117 @@
 --------------------------------------------------------------
 print("Loading EaInit.lua...")
 
-local playerType =	MapModData.playerType
-local fullCivs =	MapModData.fullCivs
-local cityStates =	MapModData.cityStates
-local realCivs =	MapModData.realCivs
-local gods =		MapModData.gods
+local function InitForNewGame()
+
+	--gWorld
+	gWorld.sumOfAllMana =				MapModData.STARTING_SUM_OF_ALL_MANA
+	gWorld.armageddonStage =			0
+	gWorld.armageddonSap =				0
+	gWorld.bAllCivsHaveNames =			false
+	gWorld.returnAsPlayer =				Game.GetActivePlayer()
+	gWorld.encampments =				{}
+	gWorld.azzConvertNum =				0
+	gWorld.anraConvertNum =				0
+	gWorld.weaveConvertNum =			0
+	gWorld.livingTerrainConvertStr =	0
+	gWorld.calledMajorSpirits =			{}
+	gWorld.panCivsEver =				0
+	
+	--gRaceDiploMatrix; index by player1 (observer), player2 (subject); these are start values modified through game by city razing
+	for row in GameInfo.EaRaces_InitialHatreds() do
+		local observerRaceID = GameInfoTypes[row.ObserverRace]
+		local subjectRaceID = GameInfoTypes[row.SubjectRace]
+		gRaceDiploMatrix[observerRaceID] = gRaceDiploMatrix[observerRaceID] or {}
+		gRaceDiploMatrix[observerRaceID][subjectRaceID] = row.Value
+	end
+
+	--gWonders
+	gWonders[GameInfoTypes.EA_WONDER_ARCANE_TOWER] =	{}		--index by EaWonders ID;	= nil or {mod, iPlot} for built wonders
+			
+	--gPlayers
+	for iPlayer = 0, BARB_PLAYER_INDEX do
+		local player = Players[iPlayer]
+		local eaPlayer = gPlayers[iPlayer]		--player tables added in EaDefines.lua
+		if MapModData.playerType[iPlayer] == "FullCiv" then
+			eaPlayer.eaCivNameID = nil
+			eaPlayer.ImprovementsByID = {}
+			eaPlayer.ImprovedResourcesByID = {}
+			eaPlayer.resourcesInBorders = {}	--visible only; for AI and possibly traits
+			eaPlayer.plotSpecialsInBorders = {}	--for AI and possibly traits
+			eaPlayer.addedResources = {}
+			eaPlayer.blockedUnitsByID = {}
+			eaPlayer.blockedBuildingsByID = {}
+			eaPlayer.sustainedPromotions = {}
+			eaPlayer.religionID = -1
+			eaPlayer.leaderEaPersonIndex = -1	--iPerson or -1 for No Leader
+			eaPlayer.nationalUniqueAction = {}		--index by eaActionID; holds -1 while actively under construction, then 1 after built
+			eaPlayer.itemList = {}	--holds EaArtifact IDs
+			eaPlayer.epicList = {}	--holds EaEpic IDs
+			eaPlayer.resourcesNearCapitalByID = {}
+			eaPlayer.totalResourcePlots = 0
+			eaPlayer.ownedPlots = 0
+			eaPlayer.culturalLevel = 0
+			eaPlayer.cumCulture = 0
+			eaPlayer.aveCulturePerPop = 0
+			eaPlayer.culturalLevelChange = 0
+			eaPlayer.policyCount = 0
+
+			--eaPlayer.cumPopTurns = 0
+			eaPlayer.techCount = 0
+			eaPlayer.rpFromDiffusion = 0
+			eaPlayer.rpFromConquest = 0
+			eaPlayer.tradeTotals = {}	--index by other iPlayer; holds only base trade so we can calculate Trade Mission value
+			eaPlayer.tradeMissions = {}	--index by other iPlayer, holds GP mod
+			eaPlayer.aiUniqueTargeted = {}	--some AI values here so we don't have to nil check
+			eaPlayer.aiMerchantTooSmallToConsider = 0
+			eaPlayer.mercenaries = {}
+			eaPlayer.revealedNWs = {}
+			eaPlayer.revealedPlotEffects = {}	--indexed by iPlot
+			local civID = player:GetCivilizationType()	 
+			local civRace = GameInfo.Civilizations[civID].EaRace
+			if civRace == "EARACE_SIDHE" then
+				eaPlayer.race = GameInfoTypes.EARACE_SIDHE
+				eaPlayer.classPoints = {1, 1, 1, 1, 1, 0, 0}		--Engineer, Merchant, Sage, Artist, Warrior, Devout, Thaumaturge
+			elseif civRace == "EARACE_HELDEOFOL" then
+				eaPlayer.race = GameInfoTypes.EARACE_HELDEOFOL
+				eaPlayer.classPoints = {1, 0, 0, 0, 1, 0, 0}
+				eaPlayer.firstKillByOrcs = false		--used???
+			else	--man
+				eaPlayer.race = GameInfoTypes.EARACE_MAN
+				eaPlayer.classPoints = {1, 1, 1, 1, 1, 0, 0}
+			end
+		elseif MapModData.playerType[iPlayer] == "Fay" then
+			eaPlayer.blockedBuildingsByID = {}
+			eaPlayer.religionID = GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
+			eaPlayer.race = GameInfoTypes.EARACE_FAY
+			eaPlayer.eaCivNameID = -1		--any value here allows appearance in diplo list
+			eaPlayer.leaderEaPersonIndex = GameInfoTypes.EAPERSON_FAND		-- Queen of the Fay
+			eaPlayer.culturalLevel = 20		--used in Diplo relations
+			eaPlayer.revealedNWs = {}
+		elseif MapModData.playerType[iPlayer] == "CityState" then
+			eaPlayer.ImprovementsByID = {}
+			eaPlayer.ImprovedResourcesByID = {}
+			eaPlayer.resourcesInBorders = {}	--visible only; for AI and possibly traits
+			eaPlayer.plotSpecialsInBorders = {}	--for AI and possibly traits
+			eaPlayer.addedResources = {}
+			eaPlayer.blockedUnitsByID = {}
+			eaPlayer.blockedBuildingsByID = {}
+			eaPlayer.sustainedPromotions = {}
+			eaPlayer.religionID = -1
+			local minorCivInfo = GameInfo.MinorCivilizations[player:GetMinorCivType()]
+			eaPlayer.race = GameInfoTypes[minorCivInfo.EaRace]
+			eaPlayer.mercenaries = {}
+		elseif MapModData.playerType[iPlayer] == "God" then
+			eaPlayer.blockedBuildingsByID = {}
+			eaPlayer.religionID = GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
+		elseif MapModData.playerType[iPlayer] == "Animals" then
+			eaPlayer.sustainedPromotions = {}
+		elseif MapModData.playerType[iPlayer] == "Barbs" then
+			eaPlayer.sustainedPromotions = {}
+		end
+	end
+
+end
 
 
 function OnLoadEaMain()   --Called from the bottom of EaMain after all included files have been processed
@@ -48,27 +154,18 @@ function OnLoadEaMain()   --Called from the bottom of EaMain after all included 
 		print("!!!! WARNGING: ", row.ErrorText, row.ItemText)
 	end
 
-	ContextPtr:SetInputHandler(InputHandler)
+	--Load persisted Lua table data if it exists (else this is a new game)
+	local bNewGame = not TableLoad(gT, "Ea")
 
-	local bNewGame = true
-	local DBQuery = Modding.OpenSaveData().Query
-	for row in DBQuery("SELECT name FROM sqlite_master WHERE name='Ea_Info'") do
-		if row.name then bNewGame = false end	-- presence of Ea_Info tells us that game already in session
-	end
-
-	--if bNewGame then
-	--	InitEaSpecialCivs()
-	--end
-
-	InitPlayerVariables()
 	if bNewGame then
 		print("Initializiing for new game...")
-		TableSave(gT, "Ea")
+		InitForNewGame()
 	else
 		print("Initializing for loaded game...")	
-		TableLoad(gT, "Ea")
 	end
 
+	--init Lua files
+	TestResyncGPIndexes()
 	EaEncampmentsInit(bNewGame)
 	EaCivsInit(bNewGame)
 	EaCivNamingInit(bNewGame)
@@ -81,165 +178,34 @@ function OnLoadEaMain()   --Called from the bottom of EaMain after all included 
 	EaAIUnitsInit(bNewGame)
 	EaUnitCombatInit(bNewGame)
 	EaUnitsInit(bNewGame)
+	EaMagicInit(bNewGame)
 	AIMercInit(bNewGame)
 	EaWondersInit(bNewGame)
 	EaActionsInit(bNewGame)
+	EaDiplomacyInit(bNewGame)
+
+	gg_init.bModInited = true
+
+	TableSave(gT, "Ea")		--first run is hardest with DB disk lag, so do it now rather than at first autosave (which can hang the game)
+
+	--This is the last thing to run at file load. Next to run is the function below when player enters the game.
 end
 
-function OnEnterGame()   --Runs when Begin or Countinue Your Journey pressed
+local function OnEnterGame()   --Runs when Begin or Countinue Your Journey pressed
 	print("Player entering game ...")
-	--Game.SetAIAutoPlay(0, 0)
-	print("AIAutoplay = ", Game.GetAIAutoPlay())
-	RegisterOnSaveCallback()
-	EaPlotsInitialized()
-	--FoundTheWeaveOfEa()
-	LuaEvents.TopPanelInfoDirty()
+
+	--trim dead players (after file inits in case someone is resurected)
+	for iPlayer in pairs(MapModData.realCivs) do
+		if not Players[iPlayer]:IsAlive() then
+			DeadPlayer(iPlayer)
+		end
+	end
+
+	gg_init.bEnteredGame = true
+	print("Debug - end of OnEnterGame")
+
+	--There is a exe autosave right after this, but GameEvents.GameSave is specifically disabled (in dll)
+	--for first save since it causes an intermittent game hang in new games
 end
 Events.LoadScreenClose.Add(OnEnterGame)
 
-
-----------------------------------------------------------------
--- Input Handler
-----------------------------------------------------------------
-function InputHandler( uiMsg, wParam, lParam )
-	if uiMsg == KeyEvents.KeyDown then
-		if wParam == Keys.VK_F11 then
-			TableSave(gT, "Ea")
-		    print("Quicksaving...")
-			UI.QuickSave()
-        	return true
-		--elseif wParam == Keys.S and UIManager:GetControl() then
-		--	print("ctrl-s detected")
-		--	OnSaveClicked()
-		--	return true
-		elseif wParam == Keys.VK_RETURN then	--called in AI turns?
-			LuaEvents.ActionInfoPanelOnEndTurnClicked()
-			return true
-		end
-	end
-end
-
-----------------------------------------------------------------
--- Game Save
-----------------------------------------------------------------
-
-function OnQuickSaveClicked()
-	print("QuickSaveGame clicked")
-	TableSave(gT, "Ea")
-	UI.QuickSave()
-end
-
-function RegisterOnSaveCallback()
-	local QuickSaveButton = ContextPtr:LookUpControl("/InGame/GameMenu/QuickSaveButton")
-	QuickSaveButton:RegisterCallback( Mouse.eLClick, OnQuickSaveClicked )
-	print ("SaveGame Buttons callbacks registered...")
-end
-
-----------------------------------------------------------------
--- Init eaPlayers
-----------------------------------------------------------------
-
-function InitPlayerVariables()
-	for iPlayer = 0, BARB_PLAYER_INDEX do
-		local player = Players[iPlayer]
-		if playerType[iPlayer] == "FullCiv" then
-			local eaPlayer = {}
-			gPlayers[iPlayer] = eaPlayer
-			fullCivs[iPlayer] = eaPlayer		--shortlist so we don't always have to cycle through the long gPlayers
-			realCivs[iPlayer] = eaPlayer
-			gg_playerValues[iPlayer] = {}
-			gg_unitPositions[iPlayer] = {}
-			eaPlayer.eaCivNameID = nil
-			eaPlayer.ImprovementsByID = {}
-			eaPlayer.ImprovedResourcesByID = {}
-			eaPlayer.resourcesInBorders = {}	--visible only; for AI and possibly traits
-			eaPlayer.plotSpecialsInBorders = {}	--for AI and possibly traits
-			eaPlayer.addedResources = {}
-			eaPlayer.blockedUnitsByID = {}
-			eaPlayer.blockedBuildingsByID = {}
-			eaPlayer.sustainedPromotions = {}
-			eaPlayer.unitAttackAtRiskPerson = {}
-			eaPlayer.religionID = -1
-			eaPlayer.leaderEaPersonIndex = -1	--iPerson or -1 for No Leader
-			eaPlayer.nationalUniqueAction = {}		--index by eaActionID; holds -1 while actively under construction, then 1 after built
-			eaPlayer.itemList = {}	--holds EaArtifact IDs
-			eaPlayer.epicList = {}	--holds EaEpic IDs
-			eaPlayer.resourcesNearCapitalByID = {}
-			eaPlayer.totalResourcePlots = 0
-			eaPlayer.ownedPlots = 0
-			eaPlayer.culturalLevel = 0
-			eaPlayer.policyCount = 0
-			eaPlayer.cumPopTurns = 0
-			eaPlayer.techCount = 0
-			eaPlayer.rpFromDiffusion = 0
-			eaPlayer.rpFromConquest = 0
-			eaPlayer.tradeTotals = {}	--index by other iPlayer; holds only base trade so we can calculate Trade Mission value
-			eaPlayer.tradeMissions = {}	--index by other iPlayer, holds GP mod
-			eaPlayer.aiUniqueTargeted = {}	--some AI values here so we don't have to nil check
-			--eaPlayer.actionPlotTargeted = {}	DEPRECIATED
-			eaPlayer.aiMerchantTooSmallToConsider = 0
-			eaPlayer.mercenaries = {}
-			eaPlayer.revealedNWs = {}
-			eaPlayer.revealedPlotEffects = {}	--indexed by iPlot
-			local civID = player:GetCivilizationType()	 
-			local civRace = GameInfo.Civilizations[civID].EaRace
-			if civRace == "EARACE_SIDHE" then
-				eaPlayer.race = GameInfoTypes.EARACE_SIDHE
-				eaPlayer.classPoints = {1, 1, 1, 1, 1, 0, 0}		--Engineer, Merchant, Sage, Artist, Warrior, Devout, Thaumaturge
-			elseif civRace == "EARACE_HELDEOFOL" then
-				eaPlayer.race = GameInfoTypes.EARACE_HELDEOFOL
-				eaPlayer.classPoints = {1, 0, 0, 0, 1, 0, 0}
-				eaPlayer.firstKillByOrcs = false		--used???
-			else	--man
-				eaPlayer.race = GameInfoTypes.EARACE_MAN
-				eaPlayer.classPoints = {1, 1, 1, 1, 1, 0, 0}
-			end
-		elseif playerType[iPlayer] == "Fay" then
-			local eaPlayer = {}
-			gPlayers[iPlayer] = eaPlayer
-			gg_playerValues[iPlayer] = {}
-			eaPlayer.blockedBuildingsByID = {}
-			eaPlayer.religionID = GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
-			eaPlayer.race = GameInfoTypes.EARACE_FAY
-			eaPlayer.eaCivNameID = -1		--any value here allows appearance in diplo list
-			eaPlayer.leaderEaPersonIndex = GameInfoTypes.EAPERSON_FAND		-- Queen of the Fay
-			eaPlayer.culturalLevel = 20		--used in Diplo relations
-			eaPlayer.revealedNWs = {}
-		elseif playerType[iPlayer] == "CityState" then
-			local eaPlayer = {}
-			gPlayers[iPlayer] = eaPlayer
-			cityStates[iPlayer] = eaPlayer
-			realCivs[iPlayer] = eaPlayer
-			gg_playerValues[iPlayer] = {}
-			eaPlayer.ImprovementsByID = {}
-			eaPlayer.ImprovedResourcesByID = {}
-			eaPlayer.resourcesInBorders = {}	--visible only; for AI and possibly traits
-			eaPlayer.plotSpecialsInBorders = {}	--for AI and possibly traits
-			eaPlayer.addedResources = {}
-			eaPlayer.blockedUnitsByID = {}
-			eaPlayer.blockedBuildingsByID = {}
-			eaPlayer.sustainedPromotions = {}
-			eaPlayer.religionID = -1
-			local minorCivInfo = GameInfo.MinorCivilizations[player:GetMinorCivType()]
-			eaPlayer.race = GameInfoTypes[minorCivInfo.EaRace]
-			eaPlayer.mercenaries = {}
-		elseif playerType[iPlayer] == "God" then
-			local eaPlayer = {}
-			gPlayers[iPlayer] = eaPlayer
-			gods[iPlayer] = eaPlayer
-			gg_playerValues[iPlayer] = {}
-			eaPlayer.blockedBuildingsByID = {}
-			eaPlayer.religionID = GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
-		elseif playerType[iPlayer] == "Animals" then
-			local eaPlayer = {}
-			gPlayers[iPlayer] = eaPlayer
-			gg_playerValues[iPlayer] = {}
-			eaPlayer.sustainedPromotions = {}
-		elseif playerType[iPlayer] == "Barbs" then
-			local eaPlayer = {}
-			gPlayers[iPlayer] = eaPlayer
-			gg_playerValues[iPlayer] = {}
-			eaPlayer.sustainedPromotions = {}
-		end
-	end
-end

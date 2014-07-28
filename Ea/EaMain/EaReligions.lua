@@ -50,7 +50,7 @@ local gReligions =	gReligions
 
 --functions
 local Rand = Map.Rand
-local Floor = math.floor
+local floor = math.floor
 
 --file control
 local g_iActivePlayer = Game.GetActivePlayer()
@@ -103,9 +103,9 @@ function ReligionPerGameTurn()
 
 	--Conversions
 	for religionID, convertKey in pairs(conversionReligions) do
-		local convertNum = Floor(gWorld[convertKey])
+		local convertNum = floor(gWorld[convertKey])
 		if convertNum >= 1 then
-			print("Floor value for ", convertKey, " = ", convertNum)
+			print("floor value for ", convertKey, " = ", convertNum)
 			local numEligibleCitiesAtheists = 0
 			local numEligibleCitiesOthers = 0
 			for iPlayer, eaPlayer in pairs(realCivs) do
@@ -143,7 +143,7 @@ function ReligionPerGameTurn()
 					local city = eligibleCitiesAtheists[index]
 					local numAtheists = city:GetNumFollowers(-1)
 					local numReligionBefore = city:GetNumFollowers(religionID)
-					city:ConvertPercentFollowers(religionID, -1, Floor(100 / numAtheists + 0.5))
+					city:ConvertPercentFollowers(religionID, -1, floor(100 / numAtheists + 0.5))
 					local thisConversionNum = city:GetNumFollowers(religionID) - numReligionBefore
 					numConverted = numConverted + thisConversionNum
 					if thisConversionNum ~= 1 then
@@ -168,7 +168,7 @@ function ReligionPerGameTurn()
 							citizenNumber = citizenNumber + loopFollowers
 							if citizenToConvert < citizenNumber then
 								local numReligionBefore = city:GetNumFollowers(religionID)
-								city:ConvertPercentFollowers(religionID, loopReligionID, Floor(100 / loopFollowers + 0.5))
+								city:ConvertPercentFollowers(religionID, loopReligionID, floor(100 / loopFollowers + 0.5))
 								local thisConversionNum = city:GetNumFollowers(religionID) - numReligionBefore
 								numConverted = numConverted + (thisConversionNum * 5)	--5x harder to convert from religion
 								if thisConversionNum ~= 1 then
@@ -320,7 +320,7 @@ function FoundReligion(iPlayer, iCity, religionID)	--call should make sure that 
 			followers = (convertID == -1 or gReligions[convertID]) and city:GetNumFollowers(convertID)
 		until followers
 		print("Converting random religions until founded is majority; converting religionID = ", convertID)
-		local convertPercent = Floor(1 + 100 / followers)
+		local convertPercent = floor(1 + 100 / followers)
 		city:ConvertPercentFollowers(religionID, convertID, convertPercent)
 	end
 
@@ -454,19 +454,6 @@ function BecomeFallen(iPlayer)		--this could happen before, during or after the 
 				print("Converting spellcaster")
 				local unit = player:GetUnitByID(eaPerson.iUnit)
 				unit:SetHasPromotion(PROMOTION_SORCERER, true)
-				--convert spells
-				--local numConvert = 0
-				--for spellID in pairs(eaPerson.spells) do
-				--	local alt = GameInfo.EaActions[spellID].FallenAltSpell
-				--	if alt and alt ~= "IsFallen" then
-				--		numConvert = numConvert + 1
-				--		integers[numConvert] = spellID
-				--		eaPerson.spells[GameInfoTypes[alt] ] = true
-				--	end
-				--end
-				--for j = 1, numConvert do
-				--	eaPerson.spells[integers[j] ] = nil
-				--end
 
 				--convert spells "in-place"
 				local spells = eaPerson.spells
@@ -479,26 +466,19 @@ function BecomeFallen(iPlayer)		--this could happen before, during or after the 
 					end
 				end
 
-				--convert subclass
+				--convert subclass and reinit unit
 				if eaPerson.subclass == "Priest" then
 					eaPerson.subclass = "FallenPriest"
+					eaPerson.class1 = "Devout"
 					eaPerson.class2 = "Thaumaturge"
 					RegisterGPActions(iPerson)
 					eaPerson.unitTypeID = GameInfoTypes.UNIT_FALLENPRIEST
-					local newUnit = player:InitUnit(GameInfoTypes.UNIT_FALLENPRIEST, unit:GetX(), unit:GetY())
-					MapModData.bBypassOnCanSaveUnit = true
-					newUnit:Convert(unit, false)
-					newUnit:SetPersonIndex(iPerson)
-					eaPerson.iUnit = newUnit:GetID()
+					InitGPUnit(iPlayer, iPerson, unit:GetX(), unit:GetY(), unit)
 				elseif eaPerson.subclass == "Paladin" then
 					eaPerson.subclass = "Eidolon"
 					RegisterGPActions(iPerson)
 					eaPerson.unitTypeID = GameInfoTypes.UNIT_EIDOLON
-					local newUnit = player:InitUnit(GameInfoTypes.UNIT_EIDOLON, unit:GetX(), unit:GetY())
-					MapModData.bBypassOnCanSaveUnit = true
-					newUnit:Convert(unit, false)
-					newUnit:SetPersonIndex(iPerson)
-					eaPerson.iUnit = newUnit:GetID()
+					InitGPUnit(iPlayer, iPerson, unit:GetX(), unit:GetY(), unit)
 				end
 			end
 		end

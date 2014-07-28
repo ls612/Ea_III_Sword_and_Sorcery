@@ -5,15 +5,6 @@
 
 local bHidden =			MapModData.bHidden
 
---function OnCanStartMission(iPlayer, iUnit, missionID)
---	print("CanStartMission ", iPlayer, iUnit, missionID)
---	return true
---end
---GameEvents.CanStartMission.Add(OnCanStartMission)
-
-
-
-
 local tableByOrderType = {	[OrderTypes.ORDER_TRAIN] = "Units",
 							[OrderTypes.ORDER_CONSTRUCT] = "Buildings",
 							[OrderTypes.ORDER_CREATE] = "Projects",
@@ -57,7 +48,29 @@ local function DebugOnPlayerPreAIUnitUpdate(iPlayer)
 end
 GameEvents.PlayerPreAIUnitUpdate.Add(function(iPlayer) return HandleError10(DebugOnPlayerPreAIUnitUpdate, iPlayer) end)
 
+local function OnRunCombatSim(attackerPlayerID, attackerUnitID, attackerUnitDamage, attackerFinalUnitDamage, attackerMaxHitPoints, defenderPlayerID, defenderUnitID, defenderUnitDamage, defenderFinalUnitDamage, defenderMaxHitPoints,  bContinuation, attackerX, attackerY, defenderX, defenderY)
+	print("RunCombatSim ", attackerPlayerID, attackerUnitID, attackerUnitDamage, attackerFinalUnitDamage, attackerMaxHitPoints, defenderPlayerID, defenderUnitID, defenderUnitDamage, defenderFinalUnitDamage, defenderMaxHitPoints,  bContinuation, attackerX, attackerY, defenderX, defenderY)	
+	local attackerPlayer = Players[attackerPlayerID]
+	local attackerUnit = attackerPlayer:GetUnitByID(attackerUnitID)
+	local attackerUnitType = attackerUnit and GameInfo.Units[attackerUnit:GetUnitType()].Type or "nil"
+	local defenderPlayer = Players[defenderPlayerID]
+	local defenderUnit = defenderPlayer:GetUnitByID(defenderUnitID)
+	local defenderUnitType = defenderUnit and GameInfo.Units[defenderUnit:GetUnitType()].Type or "nil"
+	print("Attacker: " .. attackerUnitType .. "; Defender: " .. defenderUnitType)
+end
+Events.RunCombatSim.Add(OnRunCombatSim)
 
+local function OnEndCombatSim(attackerPlayerID, attackerUnitID, attackerUnitDamage, attackerFinalUnitDamage, attackerMaxHitPoints, defenderPlayerID, defenderUnitID, defenderUnitDamage, defenderFinalUnitDamage, defenderMaxHitPoints, attackerX, attackerY, defenderX, defenderY)
+	print("EndCombatSim ", attackerPlayerID, attackerUnitID, attackerUnitDamage, attackerFinalUnitDamage, attackerMaxHitPoints, defenderPlayerID, defenderUnitID, defenderUnitDamage, defenderFinalUnitDamage, defenderMaxHitPoints, attackerX, attackerY, defenderX, defenderY)
+	local attackerPlayer = Players[attackerPlayerID]
+	local attackerUnit = attackerPlayer:GetUnitByID(attackerUnitID)
+	local attackerUnitType = attackerUnit and GameInfo.Units[attackerUnit:GetUnitType()].Type or "nil"
+	local defenderPlayer = Players[defenderPlayerID]
+	local defenderUnit = defenderPlayer:GetUnitByID(defenderUnitID)
+	local defenderUnitType = defenderUnit and GameInfo.Units[defenderUnit:GetUnitType()].Type or "nil"
+	print("Attacker: " .. attackerUnitType .. "; Defender: " .. defenderUnitType)
+end
+Events.EndCombatSim.Add(OnEndCombatSim)
 
 function DebugSpellCaster()
 	local iCaster = GenerateGreatPerson(0, nil, "Druid", nil, false)
@@ -70,16 +83,90 @@ function DebugSpellCaster()
 end
 
 
+--Listener tests
+
+--function OnCanStartMission(iPlayer, iUnit, missionID)
+--	print("CanStartMission ", iPlayer, iUnit, missionID)
+--	return true
+--end
+--GameEvents.CanStartMission.Add(OnCanStartMission)
+
+
 
 
 
 --[[
+function ListenerTest1(...)
+	print("GameplayFX", unpack(arg))
+end
+Events.GameplayFX.Add(ListenerTest1)
 
-GameInfo.Units[Map.GetPlot(53,32):GetUnit(0):GetUnitType()].Type
-
-
-
-
-
+function ListenerTest2(...)
+	print("UnitStateChangeDetected", unpack(arg))
+end
+Events.UnitStateChangeDetected.Add(ListenerTest2)
 
 ]]
+--[[
+
+local i = 0
+
+local function OnNewGameTurn(...)
+	i = i + 1
+	print("turnEventTest NewGameTurn", unpack(arg), i)
+end
+Events.NewGameTurn.Add(OnNewGameTurn)
+
+local function OnActivePlayerTurnStart(...)
+	i = i + 1
+	print("turnEventTest ActivePlayerTurnStart", unpack(arg), i)
+end
+Events.ActivePlayerTurnStart.Add(OnActivePlayerTurnStart)
+
+local function OnPlayerDoTurn(...)
+	i = i + 1
+	print("turnEventTest PlayerDoTurn", unpack(arg), i)
+end
+GameEvents.PlayerDoTurn.Add(OnPlayerDoTurn)
+
+local function OnPlayerPreAIUnitUpdate(...)
+	i = i + 1
+	print("turnEventTest PlayerPreAIUnitUpdate", unpack(arg), i)
+end
+GameEvents.PlayerPreAIUnitUpdate.Add(OnPlayerPreAIUnitUpdate)
+
+local function OnAIProcessingStartedForPlayer(...)
+	i = i + 1
+	print("turnEventTest AIProcessingStartedForPlayer", unpack(arg), i)
+end
+Events.AIProcessingStartedForPlayer.Add(OnAIProcessingStartedForPlayer)
+
+local function OnAIProcessingEndedForPlayer(...)
+	i = i + 1
+	print("turnEventTest AIProcessingEndedForPlayer", unpack(arg), i)
+end
+Events.AIProcessingEndedForPlayer.Add(OnAIProcessingEndedForPlayer)
+
+local function OnActivePlayerTurnEnd(...)
+	i = i + 1
+	print("turnEventTest ActivePlayerTurnEnd", unpack(arg), i)
+end
+Events.ActivePlayerTurnEnd.Add(OnActivePlayerTurnEnd)
+
+local function OnGameCoreTestVictory(...)
+	i = i + 1
+	print("turnEventTest GameCoreTestVictory", unpack(arg), i)
+end
+GameEvents.GameCoreTestVictory.Add(OnGameCoreTestVictory)
+
+]]
+
+
+
+--Events.ParticleEffectReloadRequested, ParticleEffectStatsRequested, ParticleEffectStatsResponse
+
+
+--[[
+
+]]
+

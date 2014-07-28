@@ -43,14 +43,14 @@ local Players =						Players
 local Teams =						Teams
 local gPlayers =					gPlayers
 local gEpics =						gEpics
-local bFullCivAI =					MapModData.bFullCivAI
 local fullCivs =					MapModData.fullCivs
 local cityStates =					MapModData.cityStates
 local gg_animalSpawnInhibitTeams =	gg_animalSpawnInhibitTeams
 local gg_slaveryPlayer =			gg_slaveryPlayer
+local gg_naturalWonders =			gg_naturalWonders
 
 --localized game and library functions
-local Floor = math.floor
+local floor = math.floor
 
 --localized global functions
 local HandleError21 =	HandleError21
@@ -105,13 +105,7 @@ function EaPoliciesInit(bNewGame)
 				gg_teamCanMeetGods[iTeam] = true
 				if player:HasPolicy(GameInfoTypes.POLICY_THROUGH_THE_VEIL) then
 					gg_teamCanMeetFay[iTeam] = true
-				end
-			
-				--v3 save compatibility patch (remove later)
-				if bV3PatchHack then
-					gWorld.panCivsEver = gWorld.panCivsEver + 1
-				end		
-					
+				end					
 			end
 			if not player:HasPolicy(GameInfoTypes.POLICY_FERAL_BOND) then
 				NRArrayAdd(gg_animalSpawnInhibitTeams, player:GetTeam())
@@ -170,11 +164,11 @@ function PolicyPerCivTurn(iPlayer)
 
 	print("DEBUG: eaPlayer.policyCount, player:GetNumRealPolicies = ", eaPlayer.policyCount, player:GetNumRealPolicies())
 
-	if eaPlayer.policyCount < Floor(eaPlayer.culturalLevel) then
-		if bFullCivAI[iPlayer] then
-			AIPickPolicy(iPlayer)
-		else
+	if eaPlayer.policyCount < floor(eaPlayer.culturalLevel) then
+		if player:IsHuman() then
 			player:ChangeNumFreePolicies(1)
+		else
+			AIPickPolicy(iPlayer)
 		end
 		eaPlayer.policyCount = eaPlayer.policyCount + 1
 	end
@@ -280,7 +274,7 @@ function OnPlayerAdoptPolicy(iPlayer, policyID)				--called by EaAICiv.lua for A
 	policyDelayedEffectID[policyDelayedEffectNum] = policyID
 	policyDelayedEffectPlayerIndex[policyDelayedEffectNum] = iPlayer
 	
-	if bFullCivAI[iPlayer] then
+	if not Players[iPlayer]:IsHuman() then
 		OnPlayerAdoptPolicyDelayedEffect()
 	end
 end

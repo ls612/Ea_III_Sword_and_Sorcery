@@ -17,12 +17,13 @@ local POLICY_ARCANA_FINISHER =					GameInfoTypes.POLICY_ARCANA_FINISHER
 
 --localized tables and functions
 local Players = Players
-local Floor = math.floor
+local floor = math.floor
 
 
 MapModData.faithFromCityStates = 0
 MapModData.faithFromGPs = 0
 MapModData.faithFromAzzTribute = 0
+MapModData.faithFromToAhrimanTribute = 0
 
 
 function GetTotalFaithPerTurnForUI(iPlayer)
@@ -65,7 +66,7 @@ function GetFaithFromPolicyFinisher(player)
 		faithFinishers = faithFinishers + 1		
 	end
 	if 0 < faithFinishers then
-		return Floor(faithFinishers * player:GetTotalJONSCulturePerTurn() / 3)
+		return floor(faithFinishers * player:GetTotalJONSCulturePerTurn() / 3)
 	else
 		return 0
 	end

@@ -8,22 +8,40 @@
 local iW, iH = Map.GetGridSize()
 local GetPlotByXY = Map.GetPlot
 local Rand = Map.Rand
-local Floor = math.floor
+local floor = math.floor
+local PlotDistance = Map.PlotDistance
+	
 
 function GetPlotIndexFromXY(x, y)
 	return y * iW + x
 end
 
 function GetXYFromPlotIndex(iPlot)
-	return iPlot % iW, Floor(iPlot / iW)
+	return iPlot % iW, floor(iPlot / iW)
 end
 
-local bWrapX, bWrapY = Map.IsWrapX(), false			--sorry, no donought worlds
+local cachePlotIndexDistances = {size = 0}
+function GetMemoizedPlotIndexDistance(iPlot1, iPlot2)		--memoized and could grow very large; so use only for distances checked repetatively (e.g., between cities and resources)
+	local cacheDist = (cachePlotIndexDistances[iPlot1] and cachePlotIndexDistances[iPlot1][iPlot2]) or (cachePlotIndexDistances[iPlot2] and cachePlotIndexDistances[iPlot2][iPlot1])
+	if cacheDist then
+		return cacheDist
+	end
+	cachePlotIndexDistances.size = cachePlotIndexDistances.size + 1
+	if cachePlotIndexDistances.size % 1000 == 0 then
+		print("cachePlotIndexDistances.size = ", cachePlotIndexDistances.size)
+	end
+	local dist = PlotDistance(iPlot1 % iW, floor(iPlot1 / iW), iPlot2 % iW, floor(iPlot2 / iW))
+	cachePlotIndexDistances[iPlot1] = cachePlotIndexDistances[iPlot1] or {}
+	cachePlotIndexDistances[iPlot1][iPlot2] = dist
+	return dist
+end
+
+local bWrapX, bWrapY = Map.IsWrapX(), false			--sorry, no doughnut worlds
 
 local yIsOddAdjOffsets = {{0, 1},{1, 1},{1, 0},{1, -1},{0, -1},{-1, 0}}
 local yIsEvenAdjOffsets = {{-1, 1},{0, 1},{1, 0},{0, -1},{-1, -1},{-1, 0}}
 
-function AdjacentPlotIterator(plot, bRandomize)		--this is so common I give it a special function for speed
+function AdjacentPlotIterator(plot, bRandomize, bIncludeCenter)		--this is so common I give it a special function for speed
 	local x, y = plot:GetXY()
 	local offsets = (y % 2 == 0) and yIsEvenAdjOffsets or yIsOddAdjOffsets
 	if bRandomize then
@@ -39,8 +57,12 @@ function AdjacentPlotIterator(plot, bRandomize)		--this is so common I give it a
 			offsets[i], offsets[d6] = offsets[d6], offsets[i]
 		end
 	end
-	local i = 0
+	local i = bIncludeCenter and -1 or 0
 	return function()
+		if i == -1 then		--note always first, not randomized (for now)
+			i = 0
+			return plot
+		end
 		while i < 6 do
 			i = i + 1
 			local adjY = y + offsets[i][2]
@@ -87,12 +109,10 @@ local tempIdx, sortedOffsetsX, sortedOffsetsY = {}, {}, {}	--used for sorting wh
 
 function PlotToRadiusIterator(x, y, radius, myX, myY, bExcludeCenter)
 	--  myX, myY (optional & expensive) specify an "approach" coordinate that will cause return values to be sorted by nearest-first
-	local Distance = Map.PlotDistance
-	local Floor = math.floor
 	local yOffset = yOffsets[radius]
 	if not yOffset then	--calculate and keep offsets for this radius (radius up to half map size)
-		local centerX = Floor(iW / 2)
-		local centerYeven = Floor(iH / 4) * 2
+		local centerX = floor(iW / 2)
+		local centerYeven = floor(iH / 4) * 2
 		local centerYodd = centerYeven + 1
 		local evenPos, oddPos = 1, 1
 		yOffsets[radius], xOffsetsEvenY[radius], xOffsetsOddY[radius] = {}, {}, {}
@@ -101,12 +121,12 @@ function PlotToRadiusIterator(x, y, radius, myX, myY, bExcludeCenter)
 			local testYodd = centerYodd + testYoffset
 			for textXoffset = -radius, radius do
 				local testX = centerX + textXoffset
-				if Distance(centerX, centerYeven, testX, testYeven) <= radius then
+				if PlotDistance(centerX, centerYeven, testX, testYeven) <= radius then
 					xOffsetsEvenY[radius][evenPos] = textXoffset
 					yOffsets[radius][evenPos] = testYoffset
 					evenPos = evenPos + 1
 				end
-				if Distance(centerX, centerYodd, testX, testYodd) <= radius then
+				if PlotDistance(centerX, centerYodd, testX, testYodd) <= radius then
 					xOffsetsOddY[radius][oddPos] = textXoffset
 					oddPos = oddPos + 1
 				end
@@ -124,7 +144,7 @@ function PlotToRadiusIterator(x, y, radius, myX, myY, bExcludeCenter)
 
 	local number = #yOffset
 	if myX then		--sort returned values by direction I am comming from
-		local Sort = table.sort
+		local sort = table.sort
 		local sortIdx, sortX, sortY = tempIdx[radius], sortedOffsetsX[radius], sortedOffsetsY[radius]
 		if not sortIdx then
 			sortIdx, sortX, sortY = {}, {}, {}
@@ -134,10 +154,9 @@ function PlotToRadiusIterator(x, y, radius, myX, myY, bExcludeCenter)
 			end
 		end
 
-		Sort(sortIdx, function(a, b)
-							local Distance = Map.PlotDistance
+		sort(sortIdx, function(a, b)
 							local myX, myY, xOffset, yOffset = myX, myY, xOffset, yOffset
-							return Distance(myX, myY, x + xOffset[a], y + yOffset[a]) < Distance(myX, myY, x + xOffset[b], y + yOffset[b])
+							return PlotDistance(myX, myY, x + xOffset[a], y + yOffset[a]) < PlotDistance(myX, myY, x + xOffset[b], y + yOffset[b])
 						end)
 		for i = 1, number do
 			local sortIndex = sortIdx[i]

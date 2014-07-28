@@ -44,9 +44,10 @@ local TERRAIN_GRASS =						GameInfoTypes.TERRAIN_GRASS
 local TERRAIN_PLAINS =						GameInfoTypes.TERRAIN_PLAINS
 local TERRAIN_TUNDRA =						GameInfoTypes.TERRAIN_TUNDRA
 local UNIT_LICH =							GameInfoTypes.UNIT_LICH
+local UNITCOMBAT_GUN =						GameInfoTypes.UNITCOMBAT_GUN
+local UNITCOMBAT_MOUNTED =					GameInfoTypes.UNITCOMBAT_MOUNTED
 
 local UNHAPPINESS_PER_CITY =				GameDefines.UNHAPPINESS_PER_CITY
-
 local UNIT_SUFFIXES =						UNIT_SUFFIXES
 local NUM_UNIT_SUFFIXES =					#UNIT_SUFFIXES
 local MOD_MEMORY_HALFLIFE =					MOD_MEMORY_HALFLIFE
@@ -60,7 +61,6 @@ local GameInfoTypes =						GameInfoTypes
 local MapModData =							MapModData
 local fullCivs =							MapModData.fullCivs
 local gods =								MapModData.gods
-local bFullCivAI =							MapModData.bFullCivAI
 local gWorld =								gWorld
 local gCities =								gCities
 local gPlayers =							gPlayers
@@ -68,16 +68,14 @@ local gPeople =								gPeople
 local gReligions =							gReligions
 local gWonders =							gWonders
 local gg_aiOptionValues =					gg_aiOptionValues
-local gg_playerValues =						gg_playerValues
 local gg_bToCheapToHire =					gg_bToCheapToHire
-local gg_bNormalCombatUnit =				gg_bNormalCombatUnit
-local gg_bNormalLivingCombatUnit =			gg_bNormalLivingCombatUnit
 local gg_baseUnitPower =					gg_baseUnitPower
 local gg_playerPlotActionTargeted =			gg_playerPlotActionTargeted
 local gg_eaSpecial =						gg_eaSpecial
+local gg_regularCombatType =				gg_regularCombatType
 
 --localized functions
-local Floor =								math.floor
+local floor =								math.floor
 local GetPlotByIndex =						Map.GetPlotByIndex
 local GetPlotFromXY =						Map.GetPlot
 local PlotDistance =						Map.PlotDistance
@@ -218,7 +216,7 @@ for unitInfo in GameInfo.Units() do
 		elseif unitInfo.EaSpecial == "Archangel" then
 			firstArchangelID = firstArchangelID or unitInfo.ID
 		elseif unitInfo.EaSpecial == "MajorSpirit" then
-			local minorTypeID = GameInfoTypes[string.gsub(unitInfo.Type, "'UNIT_", "MINOR_CIV_")]
+			local minorTypeID = GameInfoTypes[string.gsub(unitInfo.Type, "UNIT_", "MINOR_CIV_")]
 			local iPlayer = gg_minorPlayerByTypeID[minorTypeID]		--nil if not in this game
 			if iPlayer then
 				godUnits[iPlayer] = unitInfo.ID
@@ -356,6 +354,11 @@ function FinishEaSpell(eaActionID)		--only called from DoEaSpell so file locals 
 	if Finish[eaActionID] and not Finish[eaActionID]() then return false end	--this is the custom Finish call
 
 	SpecialEffects()
+
+	if g_eaPerson.timeStop and g_unit then
+		CheckTimeStopUnit(g_unit, g_eaPerson)
+	end
+
 	return true
 end
 
@@ -429,7 +432,7 @@ function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)
 		end
 	end
 
-	if SetUI[eaActionID] then
+	if not g_bEmbarked and SetUI[eaActionID] then
 		SetUI[eaActionID]()
 	end
 
@@ -486,7 +489,7 @@ function TestEaSpell(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTar
 		if g_eaPlayer.aiUniqueTargeted[eaActionID] and g_eaPlayer.aiUniqueTargeted[eaActionID] ~= iPerson then return false end	--ai specific exclude (someone on way to do this)
 		g_bAIControl = true
 	else
-		g_bAIControl = bFullCivAI[iPlayer]
+		g_bAIControl = not g_player:IsHuman()
 	end
 
 	g_unit = unit
@@ -811,13 +814,13 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 	--Finish moves
 	if g_eaAction.FinishMoves and g_unit then
 		g_unit:FinishMoves()
-	end
 
-	--Don't get stuck on unit with no moves
-	if g_iPlayer == g_iActivePlayer then
-		if UI.GetHeadSelectedUnit() and UI.GetHeadSelectedUnit():MovesLeft() == 0 then
-			print("EaAction.lua forcing unit cycle")
-			Game.CycleUnits(true, true, false)	--move on to next unit
+		--Don't get stuck on unit with no moves
+		if g_iPlayer == g_iActivePlayer then
+			if UI.GetHeadSelectedUnit() and UI.GetHeadSelectedUnit():MovesLeft() == 0 then
+				print("EaAction.lua forcing unit cycle")
+				Game.CycleUnits(true, true, false)	--move on to next unit
+			end
 		end
 	end
 
@@ -910,6 +913,11 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 		end
 
 	end
+
+	if g_eaPerson.timeStop and g_unit then
+		CheckTimeStopUnit(g_unit, g_eaPerson)
+	end
+
 	print("Reached end of DoEaSpell, returning true")
 	return true
 end
@@ -956,9 +964,11 @@ function InterruptEaSpell(iPlayer, iPerson)
 	print("end of InterruptEaSpell")								
 end
 
-function TestSpellLearnable(iPlayer, iPerson, spellID, spellClass)		--iPerson = nil to generate civ list; spellClass is optional restriction (used for separate UI panels)
+function TestSpellLearnable(iPlayer, iPerson, spellID, spellClass, bSuppressMinimumModToLearn)		--iPerson = nil to generate civ list; spellClass is optional restriction (used for separate UI panels)
 	
 	if not SetAIValues[spellID] then return false end	--Not really added yet, even if in table
+
+	--MinimumModToLearn
 
 	local spellInfo = EaActionsInfo[spellID]
 	if spellClass and spellClass ~= spellInfo.SpellClass and spellInfo.SpellClass ~= "Both" then return false end
@@ -1268,7 +1278,7 @@ local function ModelSummon_SetUI()
 		elseif g_testTargetSwitch == 3 then
 			MapModData.text = "[COLOR_WARNING_TEXT]Not enough mana to " .. verb .. " additional " .. unitPlurStr .. "[ENDCOLOR]"
 		elseif g_testTargetSwitch == 4 then
-			MapModData.text = "[COLOR_WARNING_TEXT]Your current spell modifier (" .. g_modSpell .. ") is insufficient to " .. verb .. " any " .. unitPlurStr .. " (need " .. Floor(g_int2 * g_modSpell / g_modSpellTimesTurns + 0.9999) .. ")[ENDCOLOR]"
+			MapModData.text = "[COLOR_WARNING_TEXT]Your current spell modifier (" .. g_modSpell .. ") is insufficient to " .. verb .. " any " .. unitPlurStr .. " (need " .. floor(g_int2 * g_modSpell / g_modSpellTimesTurns + 0.9999) .. ")[ENDCOLOR]"
 		elseif g_testTargetSwitch == 6 then
 			MapModData.text = "[COLOR_WARNING_TEXT]You cannont " .. verb .. " onto current or adjacent plots[ENDCOLOR]"
 		elseif g_testTargetSwitch == 20 then
@@ -1479,8 +1489,8 @@ local EA_SPELL_FIREBALL =				GameInfoTypes.EA_SPELL_FIREBALL
 local EA_SPELL_PLASMA_BOLT =			GameInfoTypes.EA_SPELL_PLASMA_BOLT
 local EA_SPELL_PLASMA_STORM =			GameInfoTypes.EA_SPELL_PLASMA_STORM
 local EA_SPELL_HAIL_OF_PROJECTILES =	GameInfoTypes.EA_SPELL_HAIL_OF_PROJECTILES
-local EA_SPELL_DEATH_RAY =				GameInfoTypes.EA_SPELL_DEATH_RAY
-local EA_SPELL_SEQUENCED_DEATH =		GameInfoTypes.EA_SPELL_SEQUENCED_DEATH
+local EA_SPELL_ENERGY_DRAIN =				GameInfoTypes.EA_SPELL_ENERGY_DRAIN
+local EA_SPELL_MASS_ENERGY_DRAIN =		GameInfoTypes.EA_SPELL_MASS_ENERGY_DRAIN
 
 local livingUnitOrGP = {}
 for unitInfo in GameInfo.Units() do
@@ -1491,7 +1501,7 @@ end
 
 local function ModelRanged_TestTarget()	--TO DO: need better AI targeting logic (for now, value goes up with existing damage)
 	local range = 2
-	local bIndirectFire = true			--TO DO: most will be indirect, but that is harder
+	local bIndirectFire = false
 	local bAutoTargetAll = false
 	local bLivingOnly = false
 	local bAllowCity = true
@@ -1500,13 +1510,19 @@ local function ModelRanged_TestTarget()	--TO DO: need better AI targeting logic 
 	if g_eaActionID == EA_SPELL_BURNING_HANDS then
 		range = 1
 		bAllowCity = false
-	elseif g_eaActionID == EA_SPELL_PLASMA_STORM or g_eaActionID == EA_SPELL_HAIL_OF_PROJECTILES then
+	elseif g_eaActionID == EA_SPELL_MAGIC_MISSILE then
+		bIndirectFire = true
+	elseif g_eaActionID == EA_SPELL_PLASMA_STORM then
 		bAutoTargetAll = true
-	elseif g_eaActionID == EA_SPELL_DEATH_RAY then
+	elseif g_eaActionID == EA_SPELL_HAIL_OF_PROJECTILES then
+		bIndirectFire = true
+		bAutoTargetAll = true
+	elseif g_eaActionID == EA_SPELL_ENERGY_DRAIN then
 		bLivingOnly = true
 		bAllowCity = false
 		bValueDamaged = false
-	elseif g_eaActionID == EA_SPELL_SEQUENCED_DEATH then
+	elseif g_eaActionID == EA_SPELL_MASS_ENERGY_DRAIN then
+		range = 3
 		bAutoTargetAll = true
 		bLivingOnly = true
 		bAllowCity = false
@@ -1517,7 +1533,7 @@ local function ModelRanged_TestTarget()	--TO DO: need better AI targeting logic 
 	local maxValue, sumValue, count = 0, 0, 0								--Any target makes valid, but AI will value based on current target damage
 	for plot in PlotAreaSpiralIterator(g_plot, range, 1, false, false, false) do
 		if plot:IsCity() then
-			if bAllowCity and g_team:IsAtWar(Players[plot:GetOwner()]:GetTeam()) then
+			if bAllowCity and (bIndirectFire or g_plot:CanSeePlot(plot, g_iTeam, range, -1)) and g_team:IsAtWar(Players[plot:GetOwner()]:GetTeam()) then
 				count = count + 1
 				local value = plot:GetPlotCity():GetDamage()
 				if bAutoTargetAll then
@@ -1530,19 +1546,21 @@ local function ModelRanged_TestTarget()	--TO DO: need better AI targeting logic 
 			end
 		elseif plot:IsVisibleEnemyUnit(g_iPlayer) then
 			print("visible enemy unit")
-			local unitCount = plot:GetNumUnits()
-			for i = 0, unitCount - 1 do
-				local unit = plot:GetUnit(i)
-				if not bLivingOnly or livingUnitOrGP[unit:GetUnitType()] then
-					if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then	--combat unit that we are at war with (need to cache at-war players for speed!)
-						count = count + 1
-						local value = unit:IsCombatUnit() and (bValueDamaged and 100 + unit:GetDamage() or 150) or 1
-						if bAutoTargetAll then
-							sumValue = sumValue + 1
-							g_table[count] = plot
-						elseif maxValue < value then	
-							maxValue = value
-							g_obj1 = plot
+			if bIndirectFire or g_plot:CanSeePlot(plot, g_iTeam, range, -1) then
+				local unitCount = plot:GetNumUnits()
+				for i = 0, unitCount - 1 do
+					local unit = plot:GetUnit(i)
+					if not bLivingOnly or livingUnitOrGP[unit:GetUnitType()] then
+						if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then	--combat unit that we are at war with (need to cache at-war players for speed!)
+							count = count + 1
+							local value = unit:IsCombatUnit() and (bValueDamaged and 100 + unit:GetDamage() or 150) or 1
+							if bAutoTargetAll then
+								sumValue = sumValue + 1
+								g_table[count] = plot
+							elseif maxValue < value then	
+								maxValue = value
+								g_obj1 = plot
+							end
 						end
 					end
 				end
@@ -1566,7 +1584,7 @@ local function ModelRanged_SetUI()
 			if g_eaActionID == EA_SPELL_BURNING_HANDS then
 				MapModData.text = "Use Burning Hands on adjacent unit with ranged strength " .. g_modSpell
 			elseif g_eaActionID == EA_SPELL_MAGIC_MISSILE then
-				MapModData.text = "Fire Magic Missiles up to range 2 with strength " .. Floor(20 * g_modSpell / 3) / 10
+				MapModData.text = "Fire Magic Missiles up to range 2 with strength " .. floor(20 * g_modSpell / 3) / 10
 			elseif g_eaActionID == EA_SPELL_FIREBALL then
 				MapModData.text = "Shoot Fireball up to range 2 with strength " .. g_modSpell
 			elseif g_eaActionID == EA_SPELL_PLASMA_BOLT then
@@ -1575,10 +1593,10 @@ local function ModelRanged_SetUI()
 				MapModData.text = "Shoot Plasma Bolts at all hostile targets up to range 2; each has strength " .. g_modSpell .. " and may stun target for one turn"
 			elseif g_eaActionID == EA_SPELL_HAIL_OF_PROJECTILES then
 				MapModData.text = "Cause a Hail of Projectiles to damage all hostile targets up to range 2; each projectile has strength " .. g_modSpell
-			elseif g_eaActionID == EA_SPELL_DEATH_RAY then
+			elseif g_eaActionID == EA_SPELL_ENERGY_DRAIN then
 				MapModData.text = "Drain life energy from one living unit up to range 2; will drain " .. g_modSpell .. " points first from target experence and then from target hit points, transfering that amount to caster experience"
-			elseif g_eaActionID == EA_SPELL_SEQUENCED_DEATH then
-				MapModData.text = "Cause Death Rays to shoot out at all hostile living units up to range 2; each will drain life energy from one unit, killing it outright or draining " .. g_modSpell .. " experience, transfering that amount to caster"
+			elseif g_eaActionID == EA_SPELL_MASS_ENERGY_DRAIN then
+				MapModData.text = "Cause Energy Drain for all hostile living units up to range 3; each will drain " .. g_modSpell .. " points first from target experence and then from target hit points, transfering that amount to caster experience"
 			end			
 		else
 			MapModData.text = "[COLOR_WARNING_TEXT]No valid target in range[ENDCOLOR]"
@@ -1601,7 +1619,7 @@ local function ModelRanged_Do()
 		newUnitTypeID = gpTempTypeUnits.BurningHands[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_BURNING_HANDS
 	elseif g_eaActionID == EA_SPELL_MAGIC_MISSILE then
 		newUnitTypeID = gpTempTypeUnits.MagicMissle[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_MAGIC_MISSLE	--fallback to wizard if we haven't added tempType unit yet
-		modX10 = Floor(2 * modX10 / 3)
+		modX10 = floor(2 * modX10 / 3)
 	elseif g_eaActionID == EA_SPELL_FIREBALL then
 		newUnitTypeID = gpTempTypeUnits.Fireball[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_FIREBALL
 	elseif g_eaActionID == EA_SPELL_PLASMA_BOLT then
@@ -1610,52 +1628,51 @@ local function ModelRanged_Do()
 		newUnitTypeID = gpTempTypeUnits.PlasmaBurst[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_PLASMA_BURST
 		bAutoTargetAll = true
 	elseif g_eaActionID == EA_SPELL_HAIL_OF_PROJECTILES then
-		newUnitTypeID = gpTempTypeUnits.Rocket[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_ROCKET
+		newUnitTypeID = gpTempTypeUnits.Rocket[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_MAGIC_MISSLE
 		bAutoTargetAll = true
-	elseif g_eaActionID == EA_SPELL_DEATH_RAY then
+	elseif g_eaActionID == EA_SPELL_ENERGY_DRAIN then
 		newUnitTypeID = gpTempTypeUnits.EnergyDrain[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_ENERGY_DRAIN
-	elseif g_eaActionID == EA_SPELL_SEQUENCED_DEATH then
+	elseif g_eaActionID == EA_SPELL_MASS_ENERGY_DRAIN then
 		newUnitTypeID = gpTempTypeUnits.EnergyDrain[oldUnitTypeID] or GameInfoTypes.UNIT_WIZARD_ENERGY_DRAIN
 		bAutoTargetAll = true
 	end	
 
 	--init and convert to ranged attack unit
-	local direction = g_unit:GetFacingDirection()
-	local newUnit = g_player:InitUnit(newUnitTypeID, g_x, g_y, nil, direction)
-	MapModData.bBypassOnCanSaveUnit = true
-	newUnit:Convert(g_unit, false)
-	newUnit:SetPersonIndex(g_iPerson)
-	local iNewUnit = newUnit:GetID()
-	g_eaPerson.iUnit = iNewUnit
-	newUnit:SetMorale(modX10 - 100)			--Use morale to modify up or down from ranged strength 10 (can't change ranged strength)
+	g_unit = InitGPUnit(g_iPlayer, g_iPerson, g_x, g_y, g_unit, newUnitTypeID, -1, modX10 - 100)
 
-	if bAutoTargetAll then					--same for human and AI
-
-		--Sequenced attacks don't work yet. I think we need a hook on CvTacticalAI::CombatResolved so we can call next attack after last one resolved
-
-
+	if bAutoTargetAll then					--same for human and AI; targets already determined in ModelRanged_TestTarget
 		g_eaPerson.autoAttack = true
-		--for i = 1, g_count - 1 do
-		--	local x, y = g_table[i]:GetXY()
-		--	newUnit:RangeStrike(x, y)
-		--	newUnit:SetMoves(60)
-		--end
-		g_eaPerson.autoAttack = false		--allows OnCombatEnded to restore normal GP unit
-		local x, y = g_table[g_count]:GetXY()
-		newUnit:RangeStrike(x, y)
-		if newUnit:MovesLeft() > 0  then
-			error("AI GP has movement after Magic Missile! Did it not fire?")
+
+		local indexList = GetRandomizedArrayIndexes(g_count)
+
+		local pos = gg_sequencedAttacks.pos
+		for i = 1, g_count do
+			local plot = g_table[indexList[i] ]
+			gg_sequencedAttacks[pos + i] = {attackingUnit = g_unit, defendingPlot = plot, bRanged = true}
+		end
+		gg_sequencedAttacks[pos + g_count].bEndAutoAttack = true	--stop the madness!
+		gg_sequencedAttacks.pos = pos + g_count
+		g_unit:SetMoves(60 * g_count)
+		DoSequencedAttacks()
+
+		--TO DO: Sequenced attacks!
+		--{attackingUnit, defendingPlot or defendingUnit [use plot unless must be unit], bRanged, bMoveIfNoEnemy, bEndAutoAttack}
+
+		
+
+		if g_unit:MovesLeft() > 0  then
+			error("AI GP has movement after magic chained range attack!")
 		end
 	elseif g_bAIControl then		--Carry out attack
 		local x, y = g_obj1:GetXY()
-		newUnit:RangeStrike(x, y)
-		if newUnit:MovesLeft() > 0  then
-			error("AI GP has movement after Magic Missile! Did it not fire?")
+		g_unit:RangeStrike(x, y)
+		if g_unit:MovesLeft() > 0  then
+			error("AI GP has movement after magic ranged attack! Did it not fire?")
 		end
 	elseif g_iPlayer == g_iActivePlayer then
-		MapModData.forcedUnitSelection = iNewUnit
+		MapModData.forcedUnitSelection = g_unit:GetID()
 		MapModData.forcedInterfaceMode = InterfaceModeTypes.INTERFACEMODE_RANGE_ATTACK
-		UI.SelectUnit(newUnit)
+		UI.SelectUnit(g_unit)
 		UI.LookAtSelectionPlot(0)
 	end
 	return true
@@ -1688,26 +1705,26 @@ Do[GameInfoTypes.EA_SPELL_PLASMA_BOLT] = ModelRanged_Do
 --EA_SPELL_PLASMA_STORM
 TestTarget[GameInfoTypes.EA_SPELL_PLASMA_STORM] = ModelRanged_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_PLASMA_STORM] = ModelRanged_SetUI
---SetAIValues[GameInfoTypes.EA_SPELL_PLASMA_STORM] = ModelRanged_SetAIValues
+SetAIValues[GameInfoTypes.EA_SPELL_PLASMA_STORM] = ModelRanged_SetAIValues
 Do[GameInfoTypes.EA_SPELL_PLASMA_STORM] = ModelRanged_Do
 
 --EA_SPELL_HAIL_OF_PROJECTILES
 TestTarget[GameInfoTypes.EA_SPELL_HAIL_OF_PROJECTILES] = ModelRanged_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_HAIL_OF_PROJECTILES] = ModelRanged_SetUI
---SetAIValues[GameInfoTypes.EA_SPELL_HAIL_OF_PROJECTILES] = ModelRanged_SetAIValues
+SetAIValues[GameInfoTypes.EA_SPELL_HAIL_OF_PROJECTILES] = ModelRanged_SetAIValues
 Do[GameInfoTypes.EA_SPELL_HAIL_OF_PROJECTILES] = ModelRanged_Do
 
---EA_SPELL_DEATH_RAY
-TestTarget[GameInfoTypes.EA_SPELL_DEATH_RAY] = ModelRanged_TestTarget
-SetUI[GameInfoTypes.EA_SPELL_DEATH_RAY] = ModelRanged_SetUI
-SetAIValues[GameInfoTypes.EA_SPELL_DEATH_RAY] = ModelRanged_SetAIValues
-Do[GameInfoTypes.EA_SPELL_DEATH_RAY] = ModelRanged_Do
+--EA_SPELL_ENERGY_DRAIN
+TestTarget[GameInfoTypes.EA_SPELL_ENERGY_DRAIN] = ModelRanged_TestTarget
+SetUI[GameInfoTypes.EA_SPELL_ENERGY_DRAIN] = ModelRanged_SetUI
+SetAIValues[GameInfoTypes.EA_SPELL_ENERGY_DRAIN] = ModelRanged_SetAIValues
+Do[GameInfoTypes.EA_SPELL_ENERGY_DRAIN] = ModelRanged_Do
 
---EA_SPELL_SEQUENCED_DEATH
-TestTarget[GameInfoTypes.EA_SPELL_SEQUENCED_DEATH] = ModelRanged_TestTarget
-SetUI[GameInfoTypes.EA_SPELL_SEQUENCED_DEATH] = ModelRanged_SetUI
---SetAIValues[GameInfoTypes.EA_SPELL_SEQUENCED_DEATH] = ModelRanged_SetAIValues
-Do[GameInfoTypes.EA_SPELL_SEQUENCED_DEATH] = ModelRanged_Do
+--EA_SPELL_MASS_ENERGY_DRAIN
+TestTarget[GameInfoTypes.EA_SPELL_MASS_ENERGY_DRAIN] = ModelRanged_TestTarget
+SetUI[GameInfoTypes.EA_SPELL_MASS_ENERGY_DRAIN] = ModelRanged_SetUI
+SetAIValues[GameInfoTypes.EA_SPELL_MASS_ENERGY_DRAIN] = ModelRanged_SetAIValues
+Do[GameInfoTypes.EA_SPELL_MASS_ENERGY_DRAIN] = ModelRanged_Do
 
 
 ----------------------------------------------------------------------------
@@ -1732,7 +1749,7 @@ end
 SetUI[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
 	if g_bNonTargetTestsPassed then
 		if g_bAllTestsPassed then
-			MapModData.text = "Inscribe a Seeing Eye Glyph on this plot (will provide visibility to range " .. Floor(g_modSpell / 5) .. ")"
+			MapModData.text = "Inscribe a Seeing Eye Glyph on this plot (will provide visibility to range " .. floor(g_modSpell / 5) .. ")"
 		elseif g_testTargetSwitch == 2 then
 			MapModData.text = "[COLOR_WARNING_TEXT]Your civilization has already placed a Glyph, Rune or Ward on this plot[ENDCOLOR]"
 		elseif g_testTargetSwitch == 3 then
@@ -1742,7 +1759,7 @@ SetUI[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
 end
 
 SetAIValues[GameInfoTypes.EA_SPELL_SEEING_EYE_GLYPH] = function()
-	local range = Floor(g_modSpell / 5)
+	local range = floor(g_modSpell / 5)
 	local addedVisibility = g_plot:IsVisible(g_iTeam) and 0 or 1
 	for radius = 1, range do
 		for plot in PlotRingIterator(g_plot, radius, 1, false) do
@@ -2061,7 +2078,7 @@ SetUI[GameInfoTypes.EA_SPELL_BANISH] = function()
 		if g_bAllTestsPassed then
 			MapModData.text = "Banish one or more nearby conjured, summoned or called units"
 		elseif g_testTargetSwitch == 1 then
-			local modNeeded = Floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
+			local modNeeded = floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
 			MapModData.text = "[COLOR_WARNING_TEXT]There are conjured, summoned or called units nearby, but you do not have sufficient Abjuration Mod to Banish them (need " .. modNeeded .. ")[ENDCOLOR]"
 		else
 			MapModData.text = "[COLOR_WARNING_TEXT]There are no conjured, summoned or called units nearby[ENDCOLOR]"
@@ -2125,7 +2142,7 @@ SetUI[GameInfoTypes.EA_SPELL_BANISH_UNDEAD] = function()
 		if g_bAllTestsPassed then
 			MapModData.text = "Banish one or more nearby undead"
 		elseif g_testTargetSwitch == 1 then
-			local modNeeded = Floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
+			local modNeeded = floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
 			MapModData.text = "[COLOR_WARNING_TEXT]There are undead nearby, but you do not have sufficient Spell Modifier to Banish them (need " .. modNeeded .. ")[ENDCOLOR]"
 		else
 			MapModData.text = "[COLOR_WARNING_TEXT]There are no undead units nearby[ENDCOLOR]"
@@ -2189,7 +2206,7 @@ SetUI[GameInfoTypes.EA_SPELL_TURN_UNDEAD] = function()
 		if g_bAllTestsPassed then
 			MapModData.text = "Turn one or more nearby undead"
 		elseif g_testTargetSwitch == 1 then
-			local modNeeded = Floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
+			local modNeeded = floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
 			MapModData.text = "[COLOR_WARNING_TEXT]There are undead nearby, but you do not have sufficient Spell Modifier to Turn them (need " .. modNeeded .. ")[ENDCOLOR]"
 		else
 			MapModData.text = "[COLOR_WARNING_TEXT]There are no undead units nearby[ENDCOLOR]"
@@ -2263,7 +2280,7 @@ SetUI[GameInfoTypes.EA_SPELL_BANISH_DEMONS] = function()
 		if g_bAllTestsPassed then
 			MapModData.text = "Banish one or more nearby demons"
 		elseif g_testTargetSwitch == 1 then
-			local modNeeded = Floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
+			local modNeeded = floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
 			MapModData.text = "[COLOR_WARNING_TEXT]There are demons nearby, but you do not have sufficient Spell Modifier to Banish them (need " .. modNeeded .. ")[ENDCOLOR]"
 		else
 			MapModData.text = "[COLOR_WARNING_TEXT]There are no demons nearby[ENDCOLOR]"
@@ -2327,7 +2344,7 @@ SetUI[GameInfoTypes.EA_SPELL_BANISH_ANGELS] = function()
 		if g_bAllTestsPassed then
 			MapModData.text = "Banish one or more nearby angels"
 		elseif g_testTargetSwitch == 1 then
-			local modNeeded = Floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
+			local modNeeded = floor(g_int1 * g_modSpell / g_modSpellTimesTurns + 0.5)
 			MapModData.text = "[COLOR_WARNING_TEXT]There are angels nearby, but you do not have sufficient Spell Modifier to Banish them (need " .. modNeeded .. ")[ENDCOLOR]"
 		else
 			MapModData.text = "[COLOR_WARNING_TEXT]There are no angels nearby[ENDCOLOR]"
@@ -2425,93 +2442,56 @@ end
 --EA_SPELL_DISPEL_ILLUSIONS
 
 --EA_SPELL_DISPEL_MAGIC
---EA_SPELL_TIME_STOP
 
---[[ moved to model function
---EA_SPELL_MAGIC_MISSILE
-TestTarget[GameInfoTypes.EA_SPELL_MAGIC_MISSILE] = function()	--TO DO: need better AI targeting logic (for now, value goes up with existing damage)
-	print("TestTarget[GameInfoTypes.EA_SPELL_MAGIC_MISSILE]")
-	local maxValue = 0								--Any target makes valid, but AI will value based on current target damage
-	for x, y in PlotToRadiusIterator(g_x, g_y, 2, nil, nil, true) do	--excludes center
-		local plot = GetPlotFromXY(x, y)
-		if plot:IsCity() then
-			if g_team:IsAtWar(Players[plot:GetOwner()]:GetTeam()) then
-				local value = plot:GetPlotCity():GetDamage()
-				if maxValue < value then	
-					maxValue = value
-					g_obj1 = plot
-				end				
-			end
-		elseif plot:IsVisibleEnemyUnit(g_iPlayer) then
-			print("visible enemy unit")
-			local unitCount = plot:GetNumUnits()
-			for i = 0, unitCount - 1 do
-				local unit = plot:GetUnit(i)
-				local unitTypeID = unit:GetUnitType()
-				if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then	--combat unit that we are at war with (need to cache at-war players for speed!)
-					local value = unit:IsCombatUnit() and 100 + unit:GetDamage() or 10
-					if maxValue < value then	
-						maxValue = value
-						g_obj1 = plot
-					end
-				end
-			end
-		end
+--EA_SPELL_TIME_STOP
+TestTarget[GameInfoTypes.EA_SPELL_TIME_STOP] = function()
+	if g_bAIControl then
+		if g_x ~= g_unitX or g_y ~= g_unitY then return false end		--it's a combat action but AI should only test self
 	end
-	if maxValue == 0 then return false end	--no targets found
-	--if target found, then g_obj1 now holds plot for best potential target for AI
-	g_value = maxValue
+	if g_eaPerson.timeStop then
+		g_testTargetSwitch = 1
+		return false
+	end
+	g_int1 = floor(g_modSpell / 15)
+	if g_int1 < 1 then
+		g_testTargetSwitch = 2
+		return false
+	elseif g_faith < g_int1 * 100 then
+		g_testTargetSwitch = 3
+		return false	
+	end
 	return true
 end
 
-SetUI[GameInfoTypes.EA_SPELL_MAGIC_MISSILE] = function()
+SetUI[GameInfoTypes.EA_SPELL_TIME_STOP] = function()
 	if g_bNonTargetTestsPassed then
 		if g_bAllTestsPassed then
-			MapModData.text = "Magic Missile attack (ranged strength " .. Floor(20 * g_modSpell / 3) / 10 .. ")"
-		else
-			MapModData.text = "[COLOR_WARNING_TEXT]No valid target in range[ENDCOLOR]"
+			MapModData.text = "Stop time for " .. g_int1 .. " turn(s) (will use " .. (g_int1 * 100) .. "mana)"
+		elseif g_testTargetSwitch == 1 then
+			MapModData.text = "[COLOR_WARNING_TEXT]Time is already stopped![ENDCOLOR]"
+		elseif g_testTargetSwitch == 2 then
+			MapModData.text = "[COLOR_WARNING_TEXT]You do not have sufficient Abjuration Modifier to cast this spell (need 15)[ENDCOLOR]"
+		elseif g_testTargetSwitch == 3 then
+			MapModData.text = "[COLOR_WARNING_TEXT]You do not have sufficient mana to cast this spell (need " .. (g_int1 * 100) .. ")[ENDCOLOR]"
 		end
 	end
 end
 
-SetAIValues[GameInfoTypes.EA_SPELL_MAGIC_MISSILE] = function()
-	gg_aiOptionValues.i = g_value
+SetAIValues[GameInfoTypes.EA_SPELL_TIME_STOP] = function()
+	gg_aiOptionValues.i = g_faith / 1000	--only if AI has mana to burn
 end
 
-Do[GameInfoTypes.EA_SPELL_MAGIC_MISSILE] = function()
-	print("Do[GameInfoTypes.EA_SPELL_MAGIC_MISSILE]")
-	--convert to ranged unit 
-	UpdateGreatPersonStatsFromUnit(g_unit, g_eaPerson)
-
-	local direction = g_unit:GetFacingDirection()
-	local newUnitTypeID = gpTempTypeUnits.MagicMissle[g_unit:GetUnitType()] or GameInfoTypes.UNIT_WIZARD_MAGIC_MISSLE	--fallback to wizard if we haven't added tempType unit yet
-
-	local newUnit = g_player:InitUnit(newUnitTypeID, g_x, g_y, nil, direction)
-	MapModData.bBypassOnCanSaveUnit = true
-	newUnit:Convert(g_unit, false)
-	newUnit:SetPersonIndex(g_iPerson)
-	local iNewUnit = newUnit:GetID()
-	g_eaPerson.iUnit = iNewUnit
-
-	newUnit:SetMorale(Floor(20 * g_modSpell / 3) - 100)	--Use morale to modify up or down from ranged strength 10 (can't change ranged strength)
-
-	if g_bAIControl then		--Carry out attack
-		print("CanRangeStrikeAt ", newUnit:CanRangeStrikeAt(g_obj1:GetX(), g_obj1:GetY()))
-		newUnit:RangeStrike(g_obj1:GetX(), g_obj1:GetY())
-		--newUnit:PushMission(MissionTypes.MISSION_RANGE_ATTACK, g_obj1:GetX(), g_obj1:GetY(), 0, 0, 1)
-		if newUnit:MovesLeft() > 0  then
-			error("AI GP has movement after Magic Missile! Did it not fire?")
-		end
-	elseif g_iPlayer == g_iActivePlayer then
-		MapModData.forcedUnitSelection = iNewUnit
-		MapModData.forcedInterfaceMode = InterfaceModeTypes.INTERFACEMODE_RANGE_ATTACK
-		UI.SelectUnit(newUnit)
-		UI.LookAtSelectionPlot(0)
+Do[GameInfoTypes.EA_SPELL_TIME_STOP] = function()
+	g_eaPerson.timeStop = g_int1
+	if g_iPlayer == g_iActivePlayer then
+		gg_bActivePlayerTimeStop = true
 	end
-
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, g_int1 * 100, false)
 	return true
 end
-]]
+
+
+
 
 
 --EA_SPELL_MAGE_SWORD
@@ -2720,7 +2700,7 @@ TestTarget[GameInfoTypes.EA_SPELL_HEX] = function()
 			if not unit:IsHasPromotion(PROMOTION_HEX) and not unit:IsHasPromotion(PROMOTION_PROTECTION_FROM_EVIL) then
 				if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then
 					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalCombatUnit[unitTypeID] then
+					if gg_regularCombatType[unitTypeID] == "troops" then
 						local power = unit:GetPower()
 						if value < power then
 							g_obj1 = unit
@@ -2806,14 +2786,11 @@ SetAIValues[GameInfoTypes.EA_SPELL_BECOME_LICH] = function()
 end
 
 Finish[GameInfoTypes.EA_SPELL_BECOME_LICH] = function()
+	local pts = g_unit:GetLevel() * 100
 	g_eaPerson.unitTypeID = UNIT_LICH
 	g_eaPerson.predestinedAgeOfDeath = nil
-	local lich = g_player:InitUnit(UNIT_LICH, g_x, g_y)
-	g_eaPerson.iUnit = lich:GetID()
-	lich:SetPersonIndex(g_iPerson)
-	MapModData.bBypassOnCanSaveUnit = true
-	lich:Convert(g_unit, false)
-	UseManaOrDivineFavor(g_iPlayer, g_iPerson, lich:GetLevel() * 100)
+	InitGPUnit(g_iPlayer, g_iPerson, g_x, g_y, g_unit, UNIT_LICH, -1)
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, pts * 100)
 	return true
 end
 
@@ -2858,7 +2835,7 @@ TestTarget[GameInfoTypes.EA_SPELL_HEAL] = function()
 		for i = 0, unitCount - 1 do
 			local unit = plot:GetUnit(i)
 			local unitTypeID = unit:GetUnitType()
-			if gg_bNormalLivingCombatUnit[unitTypeID] then
+			if gg_regularCombatType[unitTypeID] == "troops" then
 				local damage = unit:GetDamage()
 				local maxHP = unit:GetMaxHitPoints()
 				local maxPower = unit:GetPower() * maxHP / (maxHP - damage)
@@ -2946,7 +2923,7 @@ TestTarget[GameInfoTypes.EA_SPELL_BLESS] = function()
 			if unit:GetOwner() == g_iPlayer then		--change to allied
 				if not unit:IsHasPromotion(PROMOTION_BLESSED) and not unit:IsHasPromotion(PROMOTION_EVIL_EYE) then
 					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalLivingCombatUnit[unitTypeID] then
+					if gg_regularCombatType[unitTypeID] == "troops" then
 						local power = unit:GetPower()
 						if value < power then
 							g_obj1 = unit
@@ -3003,7 +2980,7 @@ TestTarget[GameInfoTypes.EA_SPELL_PROTECTION_FROM_EVIL] = function()
 			if unit:GetOwner() == g_iPlayer then		--change to allied
 				if not unit:IsHasPromotion(PROMOTION_PROTECTION_FROM_EVIL) and not unit:IsHasPromotion(PROMOTION_EVIL_EYE) then
 					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalLivingCombatUnit[unitTypeID] then
+					if gg_regularCombatType[unitTypeID] == "troops" then
 						local power = unit:GetPower()
 						if value < power then
 							g_obj1 = unit
@@ -3067,7 +3044,7 @@ TestTarget[GameInfoTypes.EA_SPELL_HURT] = function()
 			local unit = plot:GetUnit(i)
 			if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then
 				local unitTypeID = unit:GetUnitType()	
-				if gg_bNormalLivingCombatUnit[unitTypeID] then
+				if gg_regularCombatType[unitTypeID] == "troops" then
 					local currentHP = unit:GetCurrHitPoints()
 					local maxHP = unit:GetMaxHitPoints()
 					local maxPower = unit:GetPower() * maxHP / currentHP
@@ -3155,7 +3132,7 @@ TestTarget[GameInfoTypes.EA_SPELL_CURSE] = function()
 			if not unit:IsHasPromotion(PROMOTION_CURSED) and not unit:IsHasPromotion(PROMOTION_PROTECTION_FROM_EVIL) then
 				if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then
 					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalLivingCombatUnit[unitTypeID] then
+					if gg_regularCombatType[unitTypeID] == "troops" then
 						local power = unit:GetPower()
 						if value < power then
 							g_obj1 = unit
@@ -3212,7 +3189,7 @@ TestTarget[GameInfoTypes.EA_SPELL_EVIL_EYE] = function()
 			if not unit:IsHasPromotion(PROMOTION_EVIL_EYE) and not unit:IsHasPromotion(PROMOTION_PROTECTION_FROM_EVIL) then
 				if g_team:IsAtWar(Players[unit:GetOwner()]:GetTeam()) then
 					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalCombatUnit[unitTypeID] then
+					if gg_regularCombatType[unitTypeID] == "troops" then
 						local power = unit:GetPower()
 						if value < power then
 							g_obj1 = unit
@@ -3412,13 +3389,15 @@ TestTarget[GameInfoTypes.EA_SPELL_RIDE_LIKE_THE_WIND] = function()
 		for i = 0, unitCount - 1 do
 			local unit = plot:GetUnit(i)
 			if unit:GetOwner() == g_iPlayer then
-				if not unit:IsHasPromotion(PROMOTION_RIDE_LIKE_THE_WINDS) and not unit:IsHasPromotion(PROMOTION_EVIL_EYE) then
-					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalCombatUnit[unitTypeID] then
-						local unitTypeInfo = GameInfo.Units[unitTypeID]
-						numQualifiedUnits = numQualifiedUnits + 1
-						g_table[numQualifiedUnits] = unit
-						value = value + unit:GetPower()
+				local unitTypeID = unit:GetUnitType()	
+				if gg_regularCombatType[unitTypeID] == "troops" then
+					local unitCombatID = unit:GetUnitCombatType()
+					if unitCombatID == UNITCOMBAT_MOUNTED or unitCombatID == UNITCOMBAT_GUN then
+						if not unit:IsHasPromotion(PROMOTION_RIDE_LIKE_THE_WINDS) and not unit:IsHasPromotion(PROMOTION_EVIL_EYE) then
+							numQualifiedUnits = numQualifiedUnits + 1
+							g_table[numQualifiedUnits] = unit
+							value = value + unit:GetPower()
+						end
 					end
 				end
 			end
@@ -3466,7 +3445,7 @@ TestTarget[GameInfoTypes.EA_SPELL_PURIFY] = function()
 	--g_obj1 = unit
 	--g_value = unit cost for AI
 	local pts = g_modSpell < g_faith and g_modSpell or g_faith
-	local healHP = Floor(pts * 0.667)
+	local healHP = floor(pts * 0.667)
 	local bestValue = 0
 	for x, y in PlotToRadiusIterator(g_x, g_y, 1) do	--includes center
 		local plot = GetPlotFromXY(x, y)
@@ -3475,7 +3454,7 @@ TestTarget[GameInfoTypes.EA_SPELL_PURIFY] = function()
 			local unit = plot:GetUnit(i)
 			if unit:GetOwner() == g_iPlayer then	
 				local unitTypeID = unit:GetUnitType()	
-				if gg_bNormalLivingCombatUnit[unitTypeID] then
+				if gg_regularCombatType[unitTypeID] == "troops" then
 					local damage = unit:GetDamage()
 					local hpHealed = healHP < damage and healHP or damage
 					local removeBonus = 0
@@ -3507,7 +3486,7 @@ SetUI[GameInfoTypes.EA_SPELL_PURIFY] = function()
 			local unitText = Locale.ConvertTextKey(unitTypeInfo.Description)
 			--recalculate what we need as above
 			local pts = g_modSpell < g_faith and g_modSpell or g_faith
-			local healHP = Floor(pts * 0.667)
+			local healHP = floor(pts * 0.667)
 			local damage = g_obj1:GetDamage()
 			local hpHealed = healHP < damage and healHP or damage
 			local healText = ""
@@ -3549,7 +3528,7 @@ end
 
 Do[GameInfoTypes.EA_SPELL_PURIFY] = function()
 	local pts = g_modSpell < g_faith and g_modSpell or g_faith
-	local healHP = Floor(pts * 0.667)
+	local healHP = floor(pts * 0.667)
 	local damage = g_obj1:GetDamage()
 	local hpHealed = healHP < damage and healHP or damage
 	g_obj1:SetDamage(g_obj1:GetDamage() - hpHealed, -1)
@@ -3580,10 +3559,10 @@ TestTarget[GameInfoTypes.EA_SPELL_FAIR_WINDS] = function()
 		local unitCount = plot:GetNumUnits()
 		for i = 0, unitCount - 1 do
 			local unit = plot:GetUnit(i)
-			if unit:GetDomainType() == DOMAIN_SEA and unit:GetOwner() == g_iPlayer then
-				if not unit:IsHasPromotion(PROMOTION_FAIR_WINDS) then
-					local unitTypeID = unit:GetUnitType()	
-					if gg_bNormalCombatUnit[unitTypeID] then
+			if unit:GetOwner() == g_iPlayer then
+				local unitTypeID = unit:GetUnitType()	
+				if gg_regularCombatType[unitTypeID] == "ship" then
+					if not unit:IsHasPromotion(PROMOTION_FAIR_WINDS) then
 						local power = unit:GetPower()
 						if value < power then
 							g_obj1 = unit
@@ -3632,7 +3611,7 @@ end
 SetUI[GameInfoTypes.EA_SPELL_REVELRY] = function()
 	if g_bNonTargetTestsPassed then
 		if g_bAllTestsPassed then
-			local pts = Floor(g_modSpell / 2)
+			local pts = floor(g_modSpell / 2)
 			pts = pts < g_int1 and pts or g_int1
 			MapModData.text = "Increase happiness by " .. pts
 		elseif g_bIsCity and g_iOwner == g_iPlayer then
@@ -3644,13 +3623,13 @@ SetUI[GameInfoTypes.EA_SPELL_REVELRY] = function()
 end
 
 SetAIValues[GameInfoTypes.EA_SPELL_REVELRY] = function()
-	local pts = Floor(g_modSpell / 2)
+	local pts = floor(g_modSpell / 2)
 	pts = pts < g_int1 and pts or g_int1
 	gg_aiOptionValues.b = pts
 end
 
 Do[GameInfoTypes.EA_SPELL_REVELRY] = function()
-	local pts = Floor(g_modSpell / 2)
+	local pts = floor(g_modSpell / 2)
 	pts = pts < g_int1 and pts or g_int1
 	g_eaCity.gpHappiness = g_eaCity.gpHappiness or {}
 	g_eaCity.gpHappiness[g_iPerson] = pts

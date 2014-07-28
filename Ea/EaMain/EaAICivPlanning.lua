@@ -63,7 +63,6 @@ local FALLEN_ID_SHIFT =				GameInfoTypes.POLICY_ANTI_THEISM - GameInfoTypes.POLI
 
 --localized game and global tables
 local fullCivs = MapModData.fullCivs
-local bFullCivAI = MapModData.bFullCivAI
 local civNamesByRace = MapModData.civNamesByRace
 local Players = Players
 local Teams = Teams
@@ -73,13 +72,13 @@ local gg_eaNamePlayerTable = gg_eaNamePlayerTable
 
 
 --localized game and library functions
-local Distance = Map.PlotDistance
+local PlotDistance = Map.PlotDistance
 local GetPlotByXY = Map.GetPlot
-local Floor = math.floor
-local Max = math.max
-local StrFind = string.find
-local StrSubstitute = string.gsub
-local Sort = table.sort
+local floor = math.floor
+local max = math.max
+local find = string.find
+local gsub = string.gsub
+local sort = table.sort
 
 --localized global functions
 local Clone = Clone
@@ -329,11 +328,11 @@ for planInfo in GameInfo.EaCivPlans() do
 	if buildModule then
 		--print("Build instructions for plan ", planInfo.Type)
 		local build = {}
-		if StrFind(buildModule, "BUILDING") then
+		if find(buildModule, "BUILDING") then
 			build[1] = {instruction = "Capital", type = "Building", item = buildModule}
 			--print(build[1].instruction, build[1].type, build[1].item)
-		elseif StrFind(buildModule, "UNIT") then
-			local str, count = StrSubstitute(buildModule, "%*", "")
+		elseif find(buildModule, "UNIT") then
+			local str, count = gsub(buildModule, "%*", "")
 			if count == 1 then
 				build[1] = {instruction = "Capital", type = "UnitMatch", item = str}
 			else
@@ -346,10 +345,10 @@ for planInfo in GameInfo.EaCivPlans() do
 				if row.BuildModule == buildModule then
 					buildNum = buildNum + 1
 					local item = row.Item
-					if StrFind(item, "BUILDING") then
+					if find(item, "BUILDING") then
 						build[buildNum] = {instruction = row.Instruction, type = "Building", item = item}
-					elseif StrFind(item, "UNIT") then
-						local item, count = StrSubstitute(item, "%*", "")
+					elseif find(item, "UNIT") then
+						local item, count = gsub(item, "%*", "")
 						if count == 1 then
 							build[buildNum] = {instruction = row.Instruction, type = "UnitMatch", item = item}
 						else
@@ -464,7 +463,7 @@ function AICivsPerGameTurn()
 	g_prioritizeUnholyPlan = gReligions[RELIGION_AZZANDARAYASNA] and not gReligions[RELIGION_ANRA]
 	if g_prioritizeHolyPlan or g_prioritizeUnholyPlan then		--this will shut off after a while so no overhead on late game
 		for iPlayer, eaPlayer in pairs(fullCivs) do
-			if bFullCivAI[iPlayer] then
+			if not Players[iPlayer]:IsHuman() then
 				for i = 1, numPlanSets do
 					local planSet = planSets[i]
 					local plans = eaPlayer[planSet]
@@ -617,6 +616,7 @@ function AIPickPolicy(iPlayer)	--called from EaPolicies.lua
 										player:SetPolicyBranchUnlocked(branchIDForOpener, true)
 										player:SetHasPolicy(policyID, true)
 										OnPlayerAdoptPolicyBranch(iPlayer, branchIDForOpener)
+										print("AI picked policy; iPlayer, turn, policy = ", iPlayer, Game.GetGameTurn(), GameInfo.Policies[policyID].Type)
 										return
 									end
 								else
@@ -625,6 +625,7 @@ function AIPickPolicy(iPlayer)	--called from EaPolicies.lua
 										player:ChangeNumFreePolicies(-1)
 										player:SetHasPolicy(policyID, true)
 										OnPlayerAdoptPolicy(iPlayer, policyID)
+										print("AI picked policy; iPlayer, turn, policy = ", iPlayer, Game.GetGameTurn(), GameInfo.Policies[policyID].Type)
 										return
 									end
 								end
@@ -784,7 +785,7 @@ function AICivRun(iPlayer)		--called per turn and re-called if free tech or plan
 		if player:GetCurrentResearch() == -1 then
 			AIPushTechsFromCivPlans(iPlayer, true)
 			if player:GetCurrentResearch() == -1 then
-				error("AI civ exiting AICivRun with GetCurrentResearch = " .. (player:GetCurrentResearch() or "nil"))
+				print("!!!! ERROR: AI civ exiting AICivRun with GetCurrentResearch = " .. (player:GetCurrentResearch() or "nil"))
 			end
 		end
 
@@ -924,7 +925,7 @@ TestSetContingencyPlans = function(iPlayer)
 		newPlans[i] = nil
 	end
 
-	Sort(newPlans, function(a, b) return planScores[b] < planScores[a] end)
+	sort(newPlans, function(a, b) return planScores[b] < planScores[a] end)
 
 	--debug
 	local text = "Old Contingency 1 Plans:"
@@ -1352,7 +1353,6 @@ end
 SetPlansForStart = function(iPlayer)
 	--use what we have in 1st/2nd ring; may add nothing if there are no food plots around
 	print("Running SetPlansForStart ", iPlayer)
-	local Distance = Distance
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
 	local team = Teams[player:GetTeam()]
@@ -1366,7 +1366,7 @@ SetPlansForStart = function(iPlayer)
 		local plot = GetPlotByXY(x, y)
 		local resourceID = plot:GetResourceType(-1)
 		if resourceID ~= -1 then
-			local ring = Distance(x, y, capitalX, capitalY)
+			local ring = PlotDistance(x, y, capitalX, capitalY)
 			local value = 2 ^ (1 - ring)		--1, 0.5, 0.25 for ring 1, 2, 3
 			local planID = cachedPlansByResource[resourceID]
 			if planID then
@@ -1409,9 +1409,6 @@ end
 
 PickBestAvailableNamingPlan = function(iPlayer)
 	print("Running PickBestAvailableNamingPlan ", iPlayer)
-	local Distance = Distance
-	local Max = Max
-	local Floor = Floor
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
 	local race = eaPlayer.race
@@ -1433,7 +1430,7 @@ PickBestAvailableNamingPlan = function(iPlayer)
 	local capitalX, capitalY = capital:GetX(), capital:GetY()
 	for x, y in PlotToRadiusIterator(capitalX, capitalY, 10) do
 		local plot = Map.GetPlot(x, y)
-		local radius = Distance(capitalX, capitalY, x, y)
+		local radius = PlotDistance(capitalX, capitalY, x, y)
 		local resourceID = plot:GetResourceType(-1)
 		local featureID = plot:GetFeatureType()
 		local plotTypeID = plot:GetPlotType()
@@ -1497,7 +1494,7 @@ PickBestAvailableNamingPlan = function(iPlayer)
 			if not gg_eaNamePlayerTable[traitID] then	--available
 				--convert to plan
 
-				local planType = StrSubstitute(traitInfo.Type, "EACIV", "EACIVPLAN")	--EaCivPlans that target names have the same Type suffix as their corresponding EaTrait
+				local planType = gsub(traitInfo.Type, "EACIV", "EACIVPLAN")	--EaCivPlans that target names have the same Type suffix as their corresponding EaTrait
 				local planInfo = GameInfo.EaCivPlans[planType]
 				if not planInfo then
 					error("Did not find corresponding naming plan for name traitInfo " .. traitInfo.Type)
@@ -1597,7 +1594,7 @@ PickBestAvailableNamingPlan = function(iPlayer)
 				print("  ...debug turn prohibitor:", turnsForDebugProhibit)
 
 				local score = resourceScore + plotSpecialScore + adHocScore + invisibleHandScore
-				local turns = Max(turnsForTech, turnsForPolicy, turnsForDebugProhibit)
+				local turns = max(turnsForTech, turnsForPolicy, turnsForDebugProhibit)
 				local finalScore = score / (turns + 1)		--anything we can take now will have a massive advantage
 				print("  ...Final score/max(turns) =", finalScore)
 				scoreByPlanID[planID] = finalScore
@@ -1612,7 +1609,7 @@ ResetTargetName = function(iPlayer)
 	local eaPlayer = gPlayers[iPlayer]
 	local namingPlanID = PickBestAvailableNamingPlan(iPlayer)
 	local planType = GameInfo.EaCivPlans[namingPlanID].Type
-	local traitType = StrSubstitute(planType, "EACIVPLAN", "EACIV")	--EaCivPlans that target names have the same Type suffix as their corresponding EaTrait
+	local traitType = gsub(planType, "EACIVPLAN", "EACIV")	--EaCivPlans that target names have the same Type suffix as their corresponding EaTrait
 	local traitID = GameInfoTypes[traitType]
 	if not traitID then
 		error("Did not get plan or trait from ResetTargetName " .. (planType or "nil") .. " " .. (traitType or "nil"))

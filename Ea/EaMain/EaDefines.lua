@@ -69,6 +69,7 @@ GP_TXT_KEYS = {	Engineer = "TXT_KEY_EA_ENGINEER",
 				Sage = "TXT_KEY_EA_SAGE",
 				Artist = "TXT_KEY_EA_ARTIST",
 				Warrior = "TXT_KEY_EA_WARRIOR",
+				Berserker = "TXT_KEY_EA_BERSERKER",
 				Devout = "TXT_KEY_EA_DEVOUT",
 				Thaumaturge = "TXT_KEY_EA_THAUMATURGE",
 				Alchemist = "TXT_KEY_EA_ALCHEMIST",
@@ -81,7 +82,6 @@ GP_TXT_KEYS = {	Engineer = "TXT_KEY_EA_ENGINEER",
 				Witch = "TXT_KEY_EA_WITCH",
 				Wizard = "TXT_KEY_EA_WIZARD",
 				Sorcerer = "TXT_KEY_EA_SORCERER",
-				Summoner = "TXT_KEY_EA_SUMMONER",
 				Necromancer = "TXT_KEY_EA_NECROMANCER",
 				Lich = "TXT_KEY_EA_LICH"	}
 MapModData.GP_TXT_KEYS = GP_TXT_KEYS
@@ -140,14 +140,15 @@ MAX_RANGE =			Map.PlotDistance(0, 0, math.floor(MAP_W / 2 + 0.5), MAP_H - 1)	--o
 ---------------------------------------------------------------
 -- Cached Tables
 ---------------------------------------------------------------
+
 gg_unitPrefixUnitIDs = {}
 gg_bToCheapToHire = {}
 gg_eaSpecial = {}
 gg_baseUnitPower = {}
 gg_normalizedUnitPower = {}
-gg_bNormalCombatUnit = {}
-gg_bNormalLivingCombatUnit = {}
 gg_gpTempType = {}
+gg_regularCombatType = {}		--"troops", "ship", "construct" (siege, landship, dirigible); these are all regular units
+gg_unitTier = {}
 
 for unitInfo in GameInfo.Units() do
 	for i = 1, #UNIT_SUFFIXES do
@@ -156,26 +157,37 @@ for unitInfo in GameInfo.Units() do
 		if count == 1 then
 			--print(unitPrefix, unitInfo.Type)
 			gg_unitPrefixUnitIDs[unitPrefix] = gg_unitPrefixUnitIDs[unitPrefix] or {}
-				gg_unitPrefixUnitIDs[unitPrefix][#gg_unitPrefixUnitIDs[unitPrefix] + 1] = unitInfo.ID
+			gg_unitPrefixUnitIDs[unitPrefix][#gg_unitPrefixUnitIDs[unitPrefix] + 1] = unitInfo.ID
 			break
 		end
 	end
 	local unitType = unitInfo.Type
 	if string.find(unitType, "UNIT_WARRIORS") or string.find(unitType, "UNIT_SCOUTS") then
 		gg_bToCheapToHire[unitInfo.ID] = true
+		gg_unitTier[unitInfo.ID] = 1
 	end
+	if unitInfo.PrereqTech then
+		local techInfo = GameInfo.Technologies[unitInfo.PrereqTech]
+		gg_unitTier[unitInfo.ID] = techInfo.GridX + 1
+	end
+
+
 	gg_eaSpecial[unitInfo.ID] = unitInfo.EaSpecial
 	gg_baseUnitPower[unitInfo.ID] = Game.GetUnitPower(unitInfo.ID)
 	gg_normalizedUnitPower[unitInfo.ID] = math.floor(gg_baseUnitPower[unitInfo.ID] ^ 0.6667)
 	if unitInfo.EaGPTempRole then
 		gg_gpTempType[unitInfo.ID] = unitInfo.EaGPTempRole
 	elseif not unitInfo.Special and not unitInfo.EaSpecial and unitInfo.CombatLimit == 100 then
-		gg_bNormalCombatUnit[unitInfo.ID] = true
 		if unitInfo.EaLiving then
-			gg_bNormalLivingCombatUnit[unitInfo.ID] = true
+			gg_regularCombatType[unitInfo.ID] = "troops"
+		elseif unitInfo.Domain == "DOMAIN_SEA" then
+			gg_regularCombatType[unitInfo.ID] = "ship"
+		else
+			gg_regularCombatType[unitInfo.ID] = "construct"
 		end
 	end
 end
+
 
 MapModData.civNamesByRace = MapModData.civNamesByRace or {}
 local civNamesByRace = MapModData.civNamesByRace
@@ -191,87 +203,24 @@ for row in GameInfo.EaCiv_Races() do
 end
 
 gg_naturalWonders = {}	--index by featureID; filled in EaPlots Init
-----------------------------------------------------------------------------------------------------------------------------
--- State Shared tables
-----------------------------------------------------------------------------------------------------------------------------
---players
-MapModData.playerType = MapModData.playerType or {}			-- index by iPlayer
-MapModData.bFullCivAI = MapModData.bFullCivAI or {}			-- index by iPlayer; tells us if under AI control (inclues human under autoplay when all is working)
-MapModData.bHidden = MapModData.bHidden or {}
-
-local playerType = MapModData.playerType
-local bFullCivAI = MapModData.bFullCivAI
-local bHidden = MapModData.bHidden
-gg_minorPlayerByTypeID = {}
-print("Player Types by ID at game init:")
-for iPlayer = 0, BARB_PLAYER_INDEX do
-	local player = Players[iPlayer]
-	if iPlayer == FAY_PLAYER_INDEX then
-		print(iPlayer, ": Fay")
-		playerType[iPlayer] = "Fay"
-		bHidden[iPlayer] = true
-	elseif iPlayer == ANIMALS_PLAYER_INDEX then
-		print(iPlayer, ": Animals")
-		playerType[iPlayer] = "Animals"
-		bHidden[iPlayer] = true
-	elseif iPlayer == BARB_PLAYER_INDEX then
-		print(iPlayer, ": Barbs")
-		playerType[iPlayer] = "Barbs"
-	elseif player and player:IsAlive() then
-		if iPlayer < GameDefines.MAX_MAJOR_CIVS then
-			print(iPlayer, ": FullCiv")
-			playerType[iPlayer] = "FullCiv"
-			bFullCivAI[iPlayer] = not (iPlayer == Game.GetActivePlayer())		--fix for multiplayer
-		elseif player:GetMinorCivTrait() == GameInfoTypes.MINOR_TRAIT_RELIGIOUS then
-			print(iPlayer, ": God")
-			playerType[iPlayer] = "God"
-			bHidden[iPlayer] = true
-			gg_minorPlayerByTypeID[player:GetMinorCivType()] = iPlayer
-		else
-			print(iPlayer, ": CityState")
-			playerType[iPlayer] = "CityState"
-			gg_minorPlayerByTypeID[player:GetMinorCivType()] = iPlayer
-		end
-	end
-end
-
---These are set in Init
-MapModData.realCivs = MapModData.realCivs or {}		--full plus CSs
-MapModData.fullCivs = MapModData.fullCivs or {}	
-MapModData.cityStates = MapModData.cityStates or {}
-MapModData.gods = MapModData.gods or {}
-
---Other shared tables
-MapModData.gpRegisteredActions = MapModData.gpRegisteredActions or {}
-
---yields for human UI
-MapModData.mercenaryNet = 0
-
---misc
-MapModData.forcedUnitSelection = -1
-MapModData.forcedInterfaceMode = -1
-MapModData.integer = 0
 
 ----------------------------------------------------------------------------------------------------------------------------
 -- Non-preserved globals 
 ----------------------------------------------------------------------------------------------------------------------------
 
+gg_init = {}
+
 --tables indexed 1st by iPlayer
-gg_playerValues = {}
 gg_combatPointDiff = {}
-gg_unitPositions = {}
 gg_unitClusters = {}
 gg_mercHireRate = {}
-gg_cityLakesDistMatrix = {}
-gg_cityFishingDistMatrix = {}
-gg_cityWhalingDistMatrix = {}
-gg_cityCampResDistMatrix = {}
+gg_campRange = {}
 gg_fishingRange = {}
 gg_whalingRange = {}
-gg_campRange = {}
 gg_slaveryPlayer = {[BARB_PLAYER_INDEX] = true}
 gg_playerArcaneMod = {}
-
+gg_playerCityPlotIndexes = {}
+gg_cityRemoteImproveCount = {}	--index by iPlayer, iCity, type
 
 --other tables using iPlayer
 gg_eaNamePlayerTable = {}
@@ -279,10 +228,6 @@ gg_eaNamePlayerTable = {}
 --other tables
 gg_aiOptionValues = {}
 gg_peopleEverLivedByRowID = {}
-gg_lakes = {}				--each is table with .x, .y
-gg_fishingBoatResources = {}
-gg_whales = {}
-gg_campResources = {}
 gg_tradeAvailableTable = {}
 gg_bHasPatronage = {}
 gg_teamCanMeetGods = {}
@@ -295,6 +240,9 @@ gg_calledArchangel = {}				--as above
 gg_calledMajorSpirit = {}			--as above
 gg_undeadSpawnPlots = {pos = 0}
 gg_demonSpawnPlots = {pos = 0}
+gg_sequencedAttacks = {pos = 0}
+gg_cityPlotCoastalTest = {}
+gg_remoteImprovePlot = {}		--index by iPlot; = "Lake", "FishingRes", "HuntingRes", "WhalingRes" [, "Mountain"]
 
 --misc counts
 gg_counts = {	freshWaterAbzuFollowerCities = 0,
@@ -305,40 +253,84 @@ gg_counts = {	freshWaterAbzuFollowerCities = 0,
 }
 
 ----------------------------------------------------------------------------------------------------------------------------
+-- State Shared tables
+----------------------------------------------------------------------------------------------------------------------------
+
+--Other shared tables
+MapModData.gpRegisteredActions = MapModData.gpRegisteredActions or {}
+
+--human player UI
+MapModData.kmPerTechPerCitizen = 0
+MapModData.knowlMaint = 0
+MapModData.techCount = 0
+MapModData.totalPopulationForKM = 0
+MapModData.mercenaryNet = 0
+MapModData.cultureLevel = 0
+MapModData.nextCultureLevel = 0
+MapModData.estCultureLevelChange = 0
+MapModData.approachingCulturalLevel = 0
+MapModData.cultureRate = 0
+MapModData.faithFromCityStates = 0
+MapModData.faithFromAzzTribute = 0
+MapModData.faithFromToAhrimanTribute = 0
+MapModData.faithFromGPs = 0
+MapModData.numberGreatPeople = 0
+MapModData.totalGreatPersonPoints = 0
+
+--Active player UI
+MapModData.kmPerTechPerCitizen = 0
+MapModData.knowlMaint = 0
+MapModData.techCount = 0
+MapModData.totalPopulationForKM = 0
+MapModData.mercenaryNet = 0
+MapModData.cultureLevel = 0
+MapModData.nextCultureLevel = 0
+MapModData.estCultureLevelChange = 0
+MapModData.approachingCulturalLevel = 0
+MapModData.cultureRate = 0
+MapModData.faithFromCityStates = 0
+MapModData.faithFromAzzTribute = 0
+MapModData.faithFromToAhrimanTribute = 0
+MapModData.faithFromGPs = 0
+MapModData.numberGreatPeople = 0
+MapModData.totalGreatPersonPoints = 0
+MapModData.totalLivingTerrainStrength = 0
+MapModData.validForestJunglePlots = 0
+MapModData.originalForestJunglePlots = 0
+MapModData.harmonicMeanDenominator = 0
+MapModData.ownablePlots = 0
+MapModData.costHelpForTech = ""
+--Unit Panel UI
+MapModData.bShow = false
+MapModData.bAllow = false
+MapModData.text = ""
+MapModData.integer = 0
+--Misc control
+MapModData.bAutoplay = false
+MapModData.bBypassOnCanCreateTradeRoute = false
+MapModData.bReverseOnCanCreateTradeRoute = false
+MapModData.bBypassOnCanSaveUnit = false
+MapModData.forcedUnitSelection = -1
+MapModData.forcedInterfaceMode = -1
+
+----------------------------------------------------------------------------------------------------------------------------
 -- gT and referenced tables that are saved/restored through game save/loads
 ----------------------------------------------------------------------------------------------------------------------------
 
 MapModData.gT = MapModData.gT or {} --use these 2 lines in any other state that needs gT so that run order doesn't matter
 gT = MapModData.gT
 
-gWorld = {	sumOfAllMana =				MapModData.STARTING_SUM_OF_ALL_MANA,
-			armageddonStage =			0,
-			armageddonSap =				0,
-			bAllCivsHaveNames =			false,
-			returnAsPlayer =			Game.GetActivePlayer(),
-			encampments =				{},
-			azzConvertNum =				0,
-			anraConvertNum =			0,
-			weaveConvertNum =			0,
-			livingTerrainConvertStr =	0,
-			calledMajorSpirits =		{},
-			panCivsEver =				0
-			}
-
-
-
+gWorld = {}
 gPlayers = {}			--idx by iPlayer
 gPeople = {}			--arbitrary index
 gDeadPeople = {}
 gReligions = {}			--index by religionID (holds a table if founded; empty for now...)
 gCities = {}			--arbitrary but unique index
 gWorldUniqueAction = {}		--index by eaActionID; holds iPlayer while actively under construction, then -1 after built
-gWonders = {[GameInfoTypes.EA_WONDER_ARCANE_TOWER] =	{}		--index by EaWonders ID;	= nil or {mod, iPlot} for built wonders
-			
-			}	
-
+gWonders = {}	
 gEpics = {}				--index by EaEpics ID;		= nil or {mod, iPlayer} for created epics
-gArtifacts = {}				--index by EaItmes ID;		= nil or {mod, iPlayer, locationType, locationIndex}, where locationType = "iPlot", "iPerson", or "iUnit"
+gArtifacts = {}			--index by EaItmes ID;		= nil or {mod, iPlayer, locationType, locationIndex}, where locationType = "iPlot", "iPerson", or "iUnit"
+gRaceDiploMatrix = {}	--index by player1 (observer), player2 (subject)
 
 
 gT.gWorld = gWorld
@@ -351,19 +343,63 @@ gT.gWorldUniqueAction = gWorldUniqueAction
 gT.gWonders = gWonders
 gT.gEpics = gEpics
 gT.gArtifacts = gArtifacts
+gT.gRaceDiploMatrix = gRaceDiploMatrix
 
+----------------------------------------------------------------------------------------------------------------------------
+-- Players
+----------------------------------------------------------------------------------------------------------------------------
 
+MapModData.playerType = MapModData.playerType or {}			-- index by iPlayer
+MapModData.bHidden = MapModData.bHidden or {}
+MapModData.realCivs = MapModData.realCivs or {}		--full plus CSs
+MapModData.fullCivs = MapModData.fullCivs or {}	
+MapModData.cityStates = MapModData.cityStates or {}
+MapModData.gods = MapModData.gods or {}
 
-
-
-
-
--- Init tables and define initial values
--- TableLoad will add/modify values if this is a loaded game, but not delete any values
-
-
-
-
-
-
-
+local playerType = MapModData.playerType
+local bHidden = MapModData.bHidden
+gg_minorPlayerByTypeID = {}
+print("Player Types by ID at game init:")
+for iPlayer = 0, BARB_PLAYER_INDEX do
+	local player = Players[iPlayer]
+	if iPlayer == FAY_PLAYER_INDEX then
+		print(iPlayer, ": Fay")
+		gPlayers[iPlayer] = {}
+		MapModData.playerType[iPlayer] = "Fay"
+		MapModData.bHidden[iPlayer] = true
+	elseif iPlayer == ANIMALS_PLAYER_INDEX then
+		print(iPlayer, ": Animals")
+		gPlayers[iPlayer] = {}
+		MapModData.playerType[iPlayer] = "Animals"
+		MapModData.bHidden[iPlayer] = true
+	elseif iPlayer == BARB_PLAYER_INDEX then
+		print(iPlayer, ": Barbs")
+		gPlayers[iPlayer] = {}
+		MapModData.playerType[iPlayer] = "Barbs"
+	elseif iPlayer < GameDefines.MAX_MAJOR_CIVS then
+		if player:GetStartingPlot() then
+			print(iPlayer, ": FullCiv")
+			local eaPlayer = {}
+			gPlayers[iPlayer] = eaPlayer
+			MapModData.playerType[iPlayer] = "FullCiv"
+			MapModData.fullCivs[iPlayer] = eaPlayer		--shortlist so we don't always have to cycle through the long gPlayers
+			MapModData.realCivs[iPlayer] = eaPlayer
+		end
+	elseif player:GetMinorCivTrait() == GameInfoTypes.MINOR_TRAIT_RELIGIOUS then
+		print(iPlayer, ": God")
+		local eaPlayer = {}
+		gPlayers[iPlayer] = eaPlayer
+		MapModData.playerType[iPlayer] = "God"
+		MapModData.bHidden[iPlayer] = true
+		MapModData.gods[iPlayer] = eaPlayer
+		gg_minorPlayerByTypeID[player:GetMinorCivType()] = iPlayer
+	elseif player:GetStartingPlot() then		--can't use IsEverAlive for CSs, but this works
+		print(iPlayer, ": CityState")
+		local eaPlayer = {}
+		gPlayers[iPlayer] = eaPlayer
+		MapModData.playerType[iPlayer] = "CityState"
+		MapModData.cityStates[iPlayer] = eaPlayer
+		MapModData.realCivs[iPlayer] = eaPlayer
+		gg_minorPlayerByTypeID[player:GetMinorCivType()] = iPlayer
+	end
+end

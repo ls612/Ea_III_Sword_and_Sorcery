@@ -16,9 +16,13 @@ local Dprint = DEBUG_PRINT and print or function() end
 local EACIV_MAMONAS =							GameInfoTypes.EACIV_MAMONAS
 local EACIV_MOR =								GameInfoTypes.EACIV_MOR
 
+local ORDER_CONSTRUCT =							OrderTypes.ORDER_CONSTRUCT
 local ORDER_MAINTAIN =							OrderTypes.ORDER_MAINTAIN
+local ORDER_TRAIN =								OrderTypes.ORDER_TRAIN
 local CITY_UPDATE_TYPE_PRODUCTION =				CityUpdateTypes.CITY_UPDATE_TYPE_PRODUCTION
 
+local EA_ACTION_BUILD =							GameInfoTypes.EA_ACTION_BUILD
+local EA_ACTION_RECRUIT =							GameInfoTypes.EA_ACTION_RECRUIT
 
 local PROCESS_INDUSTRIAL_AGRICULTURE =			GameInfoTypes.PROCESS_INDUSTRIAL_AGRICULTURE
 local PROCESS_AZZANDARAS_TRIBUTE =				GameInfoTypes.PROCESS_AZZANDARAS_TRIBUTE
@@ -95,12 +99,13 @@ local UNHAPPINESS_PER_CAPTURED_CITY =			GameDefines.UNHAPPINESS_PER_CAPTURED_CIT
 --global tables
 local MapModData =	MapModData
 local playerType =	MapModData.playerType
-local bFullCivAI =	MapModData.bFullCivAI
 local realCivs =	MapModData.realCivs
+
+local gg_regularCombatType = gg_regularCombatType
 
 --localized functions
 local GetPlotByIndex = Map.GetPlotByIndex
-
+local floor = math.floor
 
 --file control
 local g_iActivePlayer = Game.GetActivePlayer()
@@ -145,21 +150,17 @@ local currentProductionPercentAdjByPlayer = {}
 local currentGoldPercentAdjByPlayer = {}
 local currentSciencePercentAdjByPlayer = {}
 
-local gg_playerValues = gg_playerValues
-
-
 
 --Update functions called each turn and whenever something might have changed (so UI shows effect NOW). They can be called repeatedly without harm.
 
 function UpdateGlobalYields(iPlayer, effectType, bPerTurnCall)	--City States only call effectType = "Gold"
 	--function call can specify effectType or (if nil) all effectTypes are updated
-	local Floor = math.floor
 	print("UpdateGlobalYields", iPlayer, effectType)
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
 	local bFullCiv = playerType[iPlayer] == "FullCiv"
 	local eaCivID = bFullCiv and eaPlayer.eaCivNameID or -1
-	local bHuman = not bFullCivAI[iPlayer]
+	local bHuman = player:IsHuman()
 
 	if effectType == nil or effectType == "Gold" then
 		local mercenaryCost = 0
@@ -199,8 +200,8 @@ function UpdateGlobalYields(iPlayer, effectType, bPerTurnCall)	--City States onl
 				end
 			end
 			if eaCivID == EACIV_MOR then
-				mercenaryCost = Floor(0.67 * mercenaryCost + 0.5)
-				mercenaryIncome = Floor(1.33 * mercenaryIncome + 0.5)
+				mercenaryCost = floor(0.67 * mercenaryCost + 0.5)
+				mercenaryIncome = floor(1.33 * mercenaryIncome + 0.5)
 			end
 
 		elseif player:GetMinorCivTrait() == MINOR_TRAIT_MERCENARY then
@@ -237,7 +238,6 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 	--function call can specify iSpecificCity or (if nil) all cities are updated
 	--function call can specify effectType or (if nil) all effectTypes are updated
 	print("UpdateCityYields", iPlayer, iSpecificCity, effectType, bPerTurnCall)
-	local Floor = math.floor
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
 	local bFullCiv = playerType[iPlayer] == "FullCiv"
@@ -272,7 +272,7 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 			if player:HasPolicy(POLICY_DOMINIONISM_FINISHER) then
 				food = food + player:GetTotalJONSCulturePerTurn() / 3
 			end		
-			foodDistribution = Floor(food / numCities)
+			foodDistribution = floor(food / numCities)
 			if bPerTurnCall then										--no change if this is just a UI update
 				eaPlayer.foodDistributionCarryover = food % numCities
 			end
@@ -283,21 +283,21 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 			unhappiness = unhappiness < 0 and 0 or unhappiness
 			local production = (eaPlayer.productionDistributionCarryover or 0) + unhappiness
 			if player:HasPolicy(POLICY_SLAVERY_FINISHER) then
-				production = production + Floor(player:GetTotalJONSCulturePerTurn() / 3)
+				production = production + floor(player:GetTotalJONSCulturePerTurn() / 3)
 			end
-			productionDistribution = Floor(production / numCities)
+			productionDistribution = floor(production / numCities)
 			eaPlayer.productionDistributionCarryover = bPerTurnCall and production % numCities or eaPlayer.productionDistributionCarryover	--dump remainder into unhappiness account even if it is from culture
 		end
 
 		if player:HasPolicy(POLICY_TRADITION_FINISHER) then
-			local science = (eaPlayer.scienceDistributionCarryover or 0) + Floor(player:GetTotalJONSCulturePerTurn() / 3)
-			scienceDistribution = Floor(science / numCities)
+			local science = (eaPlayer.scienceDistributionCarryover or 0) + floor(player:GetTotalJONSCulturePerTurn() / 3)
+			scienceDistribution = floor(science / numCities)
 			eaPlayer.scienceDistributionCarryover = bPerTurnCall and science % numCities or eaPlayer.scienceDistributionCarryover	--no change if this is just a UI update
 		end
 	
 		if player:HasPolicy(POLICY_COMMERCE_FINISHER) then
-			local gold = (eaPlayer.goldDistributionCarryover or 0) + Floor(player:GetTotalJONSCulturePerTurn() / 3)
-			goldDistribution = Floor(gold / numCities)
+			local gold = (eaPlayer.goldDistributionCarryover or 0) + floor(player:GetTotalJONSCulturePerTurn() / 3)
+			goldDistribution = floor(gold / numCities)
 			eaPlayer.goldDistributionCarryover = bPerTurnCall and gold % numCities or eaPlayer.goldDistributionCarryover	--no change if this is just a UI update
 		end
 	end
@@ -314,6 +314,7 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 			local population = city:GetPopulation()
 			local followerReligion = city:GetReligiousMajority()
 
+			--[[
 			if effectType == nil or effectType == "CityStateUpdate" or effectType == "RemoteResources" then
 				local remotePlots = eaCity.remotePlots
 				local numCampRes, numFishingRes, numWhales = 0, 0, 0
@@ -355,29 +356,32 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 
 			if effectType == nil or effectType == "CityStateUpdate" or effectType == "Trade" then
 
-
 			end
+			]]
 
-			if effectType == nil or effectType == "LandXP" then
+			if effectType == nil or effectType == "LandXP" or effectType == "Training" then
 				local residentLandXP = eaCity.residentLandXP or 0
 				local leaderLandXP = eaPlayer.leaderLandXP or 0
-
-				local xp = Floor(residentLandXP + leaderLandXP + 0.5) 	--add everything and round to nearest 1%
-				local prevXP = city:GetNumBuilding(BUILDING_PLUS_1_LAND_XP)
-				if xp ~= prevXP then
-					city:SetNumRealBuilding(BUILDING_PLUS_1_LAND_XP, xp)
+				local xp = residentLandXP + leaderLandXP
+				if eaCity.gpTraining then
+					for iPerson, trainingXP in pairs(eaCity.gpTraining) do
+						xp = xp + trainingXP
+					end
 				end
+				local xp = floor(xp + 0.5)				--round to nearest 1%
+				city:SetNumRealBuilding(BUILDING_PLUS_1_LAND_XP, floor(xp + 0.5))
 			end
 
-			if effectType == nil or effectType == "SeaXP" then
+			if effectType == nil or effectType == "SeaXP" or effectType == "Training" then
 				local residentSeaXP = eaCity.residentSeaXP or 0
 				local leaderSeaXP = eaPlayer.leaderSeaXP or 0
-
-				local xp = Floor(residentSeaXP + leaderSeaXP + 0.5) 	--add everything and round to nearest 1%
-				local prevXP = city:GetNumBuilding(BUILDING_PLUS_1_SEA_XP)
-				if xp ~= prevXP then
-					city:SetNumRealBuilding(BUILDING_PLUS_1_SEA_XP, xp)
+				local xp = residentSeaXP + leaderSeaXP
+				if eaCity.gpTraining then
+					for iPerson, trainingXP in pairs(eaCity.gpTraining) do
+						xp = xp + trainingXP
+					end
 				end
+				city:SetNumRealBuilding(BUILDING_PLUS_1_SEA_XP, floor(xp + 0.5))
 			end
 
 			if effectType == nil or effectType == "Food" then
@@ -390,7 +394,7 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 					elseif playerHappiness < 0 then
 						foodLost = city:FoodDifferenceTimes100() / (100 + UNHAPPY_GROWTH_PENALTY)
 					end
-					newFood = newFood + Floor(foodLost / 2 + 0.5)
+					newFood = newFood + floor(foodLost / 2 + 0.5)
 				end
 				--local prevFood = eaCity.foodBoost
 				local prevFood = city:GetBaseYieldRateFromMisc(YIELD_FOOD)
@@ -438,10 +442,10 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 					end
 				end
 				if 0 < city:GetNumBuilding(BUILDING_NATIONAL_TREASURY) then
-					newGold = newGold + Floor(player:GetGold() * city:GetNumBuilding(BUILDING_NATIONAL_TREASURY) / 2000 + 0.5)
+					newGold = newGold + floor(player:GetGold() * city:GetNumBuilding(BUILDING_NATIONAL_TREASURY) / 2000 + 0.5)
 				end
 				if nameTrait == EACIV_MAMONAS and city == capital then
-					newGold = newGold + Floor(player:GetGold() * 0.005 + 0.5)
+					newGold = newGold + floor(player:GetGold() * 0.005 + 0.5)
 				end
 				--local prevGold = eaCity.goldBoost
 				local prevGold = city:GetBaseYieldRateFromMisc(YIELD_GOLD)
@@ -455,7 +459,7 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 				local newCulture = cultureDistribution
 				local orderType, orderID = city:GetOrderFromQueue(0)
 				if orderType == ORDER_MAINTAIN and orderID == PROCESS_THE_ARTS then
-					newCulture = newCulture + Floor(city:GetYieldRate(YIELD_PRODUCTION) / 4)
+					newCulture = newCulture + floor(city:GetYieldRate(YIELD_PRODUCTION) / 4)
 				end
 				if eaCity.gpCulture then
 					for iPerson, culture in pairs(eaCity.gpCulture) do
@@ -476,11 +480,11 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 				local orderType, orderID = city:GetOrderFromQueue(0)
 				if orderType == ORDER_MAINTAIN then
 					if orderID == PROCESS_AZZANDARAS_TRIBUTE then
-						local tribute = Floor(city:GetYieldRate(YIELD_PRODUCTION) / 4)
+						local tribute = floor(city:GetYieldRate(YIELD_PRODUCTION) / 4)
 						newFaith = newFaith + tribute
 						faithFromAzzTribute = faithFromAzzTribute + tribute
 					elseif orderID == PROCESS_AHRIMANS_TRIBUTE then	
-						local manaBurn = Floor(city:GetYieldRate(YIELD_PRODUCTION) / 4)		--does not change faith because it is imediately consummed
+						local manaBurn = floor(city:GetYieldRate(YIELD_PRODUCTION) / 4)		--does not change faith because it is imediately consummed
 						faithFromToAhrimanTribute = faithFromToAhrimanTribute + manaBurn
 						if bPerTurnFullCivUpdate then
 							gWorld.sumOfAllMana = gWorld.sumOfAllMana - manaBurn
@@ -522,13 +526,13 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 						end
 					end
 					reduction = reduction < 100 and reduction or 100
-					happiness = happiness + Floor(occupationUnhappiness * reduction / 100)
+					happiness = happiness + floor(occupationUnhappiness * reduction / 100)
 				end
 
 				--Anra followers
 				if gReligions[RELIGION_ANRA] and gReligions[RELIGION_ANRA].founder ~= iPlayer then
 					local anraFollowers = city:GetNumFollowers(RELIGION_ANRA)
-					happiness = happiness - (eaPlayer.religionID == RELIGION_AZZANDARAYASNA and anraFollowers or Floor(anraFollowers / 2))
+					happiness = happiness - (eaPlayer.religionID == RELIGION_AZZANDARAYASNA and anraFollowers or floor(anraFollowers / 2))
 				end
 
 				if happiness < 0 then
@@ -543,31 +547,34 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 		end
 
 	end
-	if iPlayer == g_iActivePlayer and not iCity then			--Top Panel info for active player; run only for all-city update (iCity = nil)
-		MapModData.faithFromGPs = faithFromGPs
-		MapModData.faithFromAzzTribute = faithFromAzzTribute
-		MapModData.faithFromToAhrimanTribute = faithFromToAhrimanTribute
+	if iPlayer == g_iActivePlayer then
+		if not bPerTurnCall then
+			Events.SerialEventCityInfoDirty()	--update city banner if production changed
+		end
+		if not iCity then			--Top Panel info for active player; run only for all-city update (iCity = nil)
+			MapModData.faithFromGPs = faithFromGPs
+			MapModData.faithFromAzzTribute = faithFromAzzTribute
+			MapModData.faithFromToAhrimanTribute = faithFromToAhrimanTribute
+		end
 	end
 end
 
 --------------------------------------------------------------
 -- Event functions
 --------------------------------------------------------------
-local prevProcessOrderType = {}	--index by iCity, use to know if changed
-local prevProcessOrderID = {}
-local function UpdateUIForProcessChange(iPlayer, iCity, updateTypeID)
-	if iPlayer == g_iActivePlayer and updateTypeID == CITY_UPDATE_TYPE_PRODUCTION then	-- This provides immediate UI feedback when a city changes processes
-		Dprint("UpdateUIForProcessChange ", iPlayer, iCity, updateTypeID)		
-		--print("UpdateUIForProcessChange ", iPlayer, iCity, updateTypeID)
-		local city = Players[iPlayer]:GetCityByID(iCity)
+local prevOrderType = {}	--index by iCity, use to know if changed
+local prevOrderID = {}
+local function ActivePlayerCityBuildQueueChange(iPlayer, iCity, updateTypeID)
+	if iPlayer == g_iActivePlayer and updateTypeID == CITY_UPDATE_TYPE_PRODUCTION then	-- This provides immediate UI feedback when a city changes processes		
+		local player = Players[iPlayer]
+		local city = player:GetCityByID(iCity)
 		if city then
 			local orderType, orderID = city:GetOrderFromQueue(0)
-			print(orderType, orderID)
-			if orderType ~= prevProcessOrderType[iCity] or orderID ~= prevProcessOrderID[iCity] then	--changed
-				--if (orderType == ORDER_MAINTAIN and orderID == PROCESS_INDUSTRIAL_AGRICULTURE) or (prevProcessOrderType[iCity] == ORDER_MAINTAIN and prevProcessOrderID[iCity] == PROCESS_INDUSTRIAL_AGRICULTURE) then
-				--	UpdateCityYields(iPlayer, iCity, "Food")
-				--end
+			print("CityBuildQueueChange ", orderType, orderID)
 
+			if orderType ~= prevOrderType[iCity] or orderID ~= prevOrderID[iCity] then	--changed
+
+				--process changes
 				if orderType == ORDER_MAINTAIN then
 					if orderID == PROCESS_INDUSTRIAL_AGRICULTURE then
 						UpdateCityYields(iPlayer, iCity, "Food")
@@ -578,23 +585,47 @@ local function UpdateUIForProcessChange(iPlayer, iCity, updateTypeID)
 					end
 
 				end
-				if prevProcessOrderType[iCity] == ORDER_MAINTAIN then
-					if prevProcessOrderID[iCity] == PROCESS_INDUSTRIAL_AGRICULTURE then
+				if prevOrderType[iCity] == ORDER_MAINTAIN then
+					if prevOrderID[iCity] == PROCESS_INDUSTRIAL_AGRICULTURE then
 						UpdateCityYields(iPlayer, iCity, "Food")
-					elseif prevProcessOrderID[iCity] == PROCESS_THE_ARTS then
+					elseif prevOrderID[iCity] == PROCESS_THE_ARTS then
 						UpdateCityYields(iPlayer, iCity, "Culture")
-					elseif prevProcessOrderID[iCity] == PROCESS_AZZANDARAS_TRIBUTE or orderID == PROCESS_AHRIMANS_TRIBUTE then
+					elseif prevOrderID[iCity] == PROCESS_AZZANDARAS_TRIBUTE or orderID == PROCESS_AHRIMANS_TRIBUTE then
 						UpdateCityYields(iPlayer, iCity, "Faith")
 					end
 				end
 
-				prevProcessOrderType[iCity] = orderType
-				prevProcessOrderID[iCity] = orderID
+				--change that invalidates Engineer Build or Warrior Train action (wake GP for new orders)
+				local iPlot = city:Plot():GetPlotIndex()
+				for iPerson, eaPerson in pairs(gPeople) do
+					if eaPerson.eaActionData == iPlot then
+						local bInterrupt = false
+						if eaPerson.eaActionID == EA_ACTION_BUILD then
+							if orderType ~= ORDER_CONSTRUCT and (orderType ~= ORDER_TRAIN or gg_regularCombatType[orderID] ~= "construct") then
+								bInterrupt = true
+							end
+						elseif eaPerson.eaActionID == EA_ACTION_RECRUIT then
+							if orderType ~= ORDER_TRAIN or gg_regularCombatType[orderID] ~= "troops" then
+								bInterrupt = true
+							end
+						end
+						if bInterrupt then
+							InterruptEaAction(eaPerson.iPlayer, iPerson)	--this will call UpdateCityYields
+							local unit = player:GetUnitByID(eaPerson.iUnit)
+							if unit then
+								UI.SelectUnit(unit)
+							end
+						end
+					end
+				end
+
+				prevOrderType[iCity] = orderType
+				prevOrderID[iCity] = orderID
 			end
 		end
 	end
 end
-Events.SpecificCityInfoDirty.Add(UpdateUIForProcessChange)
+Events.SpecificCityInfoDirty.Add(ActivePlayerCityBuildQueueChange)
 
 
 ----------------------------------------------------------------

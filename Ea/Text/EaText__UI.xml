@@ -49,8 +49,6 @@
 			<Text>[COLOR_LIGHT_GREY]Demons spawn from Breach[ENDCOLOR]</Text>
 		</Row>
 
-		
-
 		<!-- Notifications -->
 		<Row Tag="TXT_KEY_EA_RELIGIOUS_CONVERSION">
 			<Text>Your civilization has gained [COLOR_POSITIVE_TEXT]{1_religion}[ENDCOLOR] as its dominant religion.</Text>
@@ -122,9 +120,7 @@
 		<Row Tag="TXT_KEY_EA_TP_UNHAPPINESS_FROM_HAVAMAL_EPIC">
 			<Text>{1_Num} from the Hávamál Epic.</Text>
 		</Row>
-
 		
-
 		<Row Tag="TXT_KEY_EA_TP_DIVINE_FAVOR">
 			<Text>You have accumulated [COLOR_POSITIVE_TEXT]{1_Num}[ENDCOLOR] [ICON_PEACE] Divine Favor. Only those pursuing the worship of Azzandara accumulate [ICON_PEACE] Divine Favor.</Text>
 		</Row>
@@ -255,6 +251,15 @@
 		<Row Tag="TXT_KEY_EA_FAITH_FROM_GPS">
 			<Text>{1_Num} [ICON_PEACE] from Great People</Text>
 		</Row>
+		<Row Tag="TXT_KEY_EA_FAITH_FROM_SPECIALISTS">
+			<Text>{1_Num} [ICON_PEACE] from Specialists</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_PRODUCTION_BUILDING_DIVINE_FAVOR">
+			<Text>[ICON_PEACE] Divine Favor: +{1_Num}</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_PRODUCTION_BUILDING_MANA">
+			<Text>[ICON_STAR] Mana: +{1_Num}</Text>
+		</Row>
 
 		<!-- Info Tooltip and Dll hard-coded -->
 		<Row Tag="TXT_KEY_EA_PRODMOD_YIELD_LEADER">
@@ -282,10 +287,10 @@
 			<Text>The Sum of All Mana has been depleted to 66%. Blight begins to spread from already blighted plots, and breach from already breached plots. The rate of spread increases as the Sum of All Mana depletes to zero.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_5">
-			<Text>The Sum of All Mana has been depleted to 50%. All mana accumulative processes are reduced by 33% (and reduced further toward 90% as the Sum of All Mana depletes to zero). This does not affect divine favor.</Text>
+			<Text>The Sum of All Mana has been depleted to 50%. The world is corrupted by a surge of blight affecting 1 out of every 20 plots. All mana accumulative processes are reduced by 33% (and reduced further toward 90% as the Sum of All Mana depletes to zero).</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_6">
-			<Text>The Sum of All Mana has been depleted to 33%. Blight begins to appear spontaneously (0.5% chance per unaffected plot per turn increasing to 2% as the Sum of All Mana depletes to zero).</Text>
+			<Text>The Sum of All Mana has been depleted to 33%. The fabric of the world begins to tear: 1 out of every 40 plots become Breached. Blight begins to appear spontaneously (2.5% chance per unaffected plot per turn increasing to 10% as the Sum of All Mana depletes to zero).</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_7">
 			<Text>The Sum of All Mana has been depleted to 25%. Pestilence, the first of the Four Horsemen, arrives riding a White Horse. He carries the Sickening Bow and the Plague Crown which cause (respectively) sickness in all units and plague in all cities that he attacks.</Text>

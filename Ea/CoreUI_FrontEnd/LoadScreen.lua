@@ -20,7 +20,7 @@ local RETURN_MUSIC_VOLUME_THOUSANDTHS_SECONDS = 1000
 
 local bStart = false
 local g_tickStart = 0
-local function LocalMachineAppUpdateListener(tickCount, timeIncrement)
+function LocalMachineAppUpdateListener(tickCount, timeIncrement)
 	if bStart then
 		if RETURN_MUSIC_VOLUME_THOUSANDTHS_SECONDS < tickCount - tickStart then
 			print("LoadScreen.lua is restoring music volume; delay in sec/1000 = ", tickCount - tickStart)
@@ -154,12 +154,13 @@ function OnInitScreen()
 end      
 
 function OnActivateButtonClicked ()
-	--print("Activate button clicked!");
+	print("Activate button clicked!");		--Paz re-enabled for debugging
 	Events.LoadScreenClose();
 	if (not PreGame.IsMultiplayerGame() and not PreGame.IsHotSeatGame()) then
 		Game.SetPausePlayer(-1);
 	end
 	--Paz add
+	print("Adding LocalMachineAppUpdateListener for sound control")
 	Events.LocalMachineAppUpdate.Add(LocalMachineAppUpdateListener)
 	--end Paz add
 	--UI.SetNextGameState( GameStates.MainGameView, g_iAIPlayer );
@@ -189,6 +190,10 @@ function HideBackgrounds ()
 end
 
 function OnSequenceGameInitComplete ()
+
+	--Paz debug
+	print("OnSequenceGameInitComplete")
+	--end Paz debug
 	
 	g_bLoadComplete = true;	
 	
@@ -208,6 +213,7 @@ function OnSequenceGameInitComplete ()
 		HideBackgrounds();
         UIManager:SetUICursor( 0 );	
         
+		--[[Paz disabled
         -- Update Icons to now have tooltips.
         local civIndex = PreGame.GetCivilization( Game:GetActivePlayer() );
         local civ = GameInfo.Civilizations[civIndex];
@@ -221,6 +227,7 @@ function OnSequenceGameInitComplete ()
 			 -- Sets Bonus Icons
 			local bonusText = PopulateUniqueBonuses( Controls, civ, leader, true, false);
 		end
+		]]
 	end
 end
 

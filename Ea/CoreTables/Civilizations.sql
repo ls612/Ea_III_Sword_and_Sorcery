@@ -28,6 +28,7 @@ INSERT INTO Civilizations (ID, Type,	EaCivString,	EaRace,				Description,				EaR
 
 --note: These four IDs are hardcoded in EaSetupFunctions.lua! (FrontEnd can't reference tables so needs hard-coded IDs)
 
+
 --Build out the table from EaCivs and EaCiv_Races
 INSERT INTO Civilizations (Type, Description, ShortDescription, Adjective, CivilopediaTag, EaCivName, EaRace, EaCivString, DefaultPlayerColor)
 SELECT REPLACE(Type, 'EACIV_', 'CIVILIZATION_') || REPLACE(EaRace, 'EARACE_', '_'), Description, ShortDescription, Adjective, CivilopediaTag, Type, EaRace, EaCivString, DefaultPlayerColor
@@ -50,7 +51,8 @@ UPDATE Civilizations SET ArtDefineTag = 'BLANKLEADER_Scene', ArtStyleType = 'ART
 
 UPDATE Civilizations SET DawnOfManQuote = 'TXT_KEY_CIV5_DAWN_UNITEDSTATES_TEXT', DawnOfManImage = 'DOM_Washington.dds' WHERE Type NOT IN (SELECT Type FROM TempBaseKeepList);
 
-
+--below line CTDs on start; Civ5 seems to need all of these to be 'selectable' to work, so disabled selection in UI and override random slots using PRNG
+--UPDATE Civilizations SET Playable = 0, AIPlayable = 0 WHERE Type NOT IN ('CIVILIZATION_GENERIC_MAN', 'CIVILIZATION_GENERIC_SIDHE');
 
 --Fixinator
 CREATE TABLE IDRemapper ( id INTEGER PRIMARY KEY AUTOINCREMENT, Type TEXT );
@@ -136,13 +138,14 @@ SELECT 'CIVILIZATION_MINOR', Class, NULL FROM Units WHERE EaNoTrain IS NOT NULL;
 INSERT INTO Civilization_UnitClassOverrides (CivilizationType, UnitClassType, UnitType)
 SELECT Civilizations.Type, Units.Class, NULL FROM Civilizations, Units WHERE EaNoTrain IS NOT NULL AND Civilizations.EaRace IN ('EARACE_MAN', 'EARACE_SIDHE', 'EARACE_HELDEOFOL');
 
---Fay, Barbs and Animals (cannot train any units! - all spawns by Lua)
+--Fay and Animals can't train any units! - all spawns by Lua
 INSERT INTO Civilization_UnitClassOverrides (CivilizationType, UnitType, UnitClassType)
-SELECT 'CIVILIZATION_BARBARIAN', NULL, Type FROM UnitClasses UNION ALL
 SELECT 'CIVILIZATION_THE_FAY', NULL, Type FROM UnitClasses UNION ALL
 SELECT 'CIVILIZATION_ANIMALS', NULL, Type FROM UnitClasses;	
 
-
+--Barbs can't train any units (spawns by Lua), but are allowed Slaves for capture
+INSERT INTO Civilization_UnitClassOverrides (CivilizationType, UnitType, UnitClassType)
+SELECT 'CIVILIZATION_BARBARIAN', NULL, Type FROM UnitClasses WHERE Type NOT GLOB 'UNITCLASS_SLAVES_*';
 
 DELETE FROM Civilization_CityNames;
 --Generics and fake names

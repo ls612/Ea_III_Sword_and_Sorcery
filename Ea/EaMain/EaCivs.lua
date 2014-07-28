@@ -12,6 +12,8 @@ local Dprint = DEBUG_PRINT and print or function() end
 --------------------------------------------------------------
 
 --constants
+local MAX_MAJOR_CIVS =							GameDefines.MAX_MAJOR_CIVS	
+
 local EACIV_DAIRINE =							GameInfoTypes.EACIV_DAIRINE
 local EACIV_PARTHOLON =							GameInfoTypes.EACIV_PARTHOLON
 local EACIV_SKOGR =								GameInfoTypes.EACIV_SKOGR
@@ -38,7 +40,7 @@ local bHidden = MapModData.bHidden
 local playerType = MapModData.playerType
 
 --functions
-local Floor = math.floor
+local floor = math.floor
 local Rand = Map.Rand
 
 --localized tables
@@ -51,6 +53,7 @@ local gWorld =		gWorld
 local gg_bHasPatronage = gg_bHasPatronage
 local gg_teamCanMeetGods = gg_teamCanMeetGods
 local gg_teamCanMeetFay = gg_teamCanMeetFay
+local gg_naturalWonders = gg_naturalWonders
 
 --state shared
 local fullCivs =	MapModData.fullCivs
@@ -184,7 +187,7 @@ function EaCivsInit(bNewGame)
 		fay:ChangeNumResourceTotal(GameInfoTypes.RESOURCE_IRON, 5) 
 		fay:ChangeNumResourceTotal(GameInfoTypes.RESOURCE_YEW, 5)
 
-		for iPlayer = GameDefines.MAX_MAJOR_CIVS, BARB_PLAYER_INDEX - 1 do
+		for iPlayer = MAX_MAJOR_CIVS, BARB_PLAYER_INDEX - 1 do
 			if playerType[iPlayer] == "God" then
 				local player = Players[iPlayer]
 				local minorCivID = player:GetMinorCivType()
@@ -227,8 +230,6 @@ end
 -- File Functions
 --------------------------------------------------------------
 
---gg_naturalWonders
-
 local OnNWFound = {}
 
 local function TestSetNaturalWonderEffects(iPlayer, x, y)	--if x, y nil then check all
@@ -269,6 +270,22 @@ end
 -- Interface
 --------------------------------------------------------------
 
+function DeadPlayer(iPlayer)
+	print("DeadPlayer ", iPlayer)
+	realCivs[iPlayer] = nil
+	fullCivs[iPlayer] = nil
+	cityStates[iPlayer] = nil
+end
+
+function ResurectedPlayer(iPlayer)
+	realCivs[iPlayer] = gPlayers[iPlayer]
+	if iOwner < MAX_MAJOR_CIVS then
+		fullCivs[iPlayer] = gPlayers[iPlayer]
+	else
+		cityStates[iPlayer] = gPlayers[iPlayer]
+	end
+end
+
 function CityStatePerCivTurn(iPlayer)	-- called for true city states only
 	print("CityStatePerCivTurn ", iPlayer)
 	local player = Players[iPlayer]
@@ -288,7 +305,7 @@ function CityStatePerCivTurn(iPlayer)	-- called for true city states only
 				local atheists = city:GetNumFollowers(-1)
 				if 0 < atheists then
 					print("Converting 1 citizen in Holy City State")
-					local convertPercent = Floor(100 / atheists + 1)
+					local convertPercent = floor(100 / atheists + 1)
 					city:ConvertPercentFollowers(RELIGION_AZZANDARAYASNA, -1, convertPercent)
 				end
 			end
@@ -370,10 +387,10 @@ function FullCivPerCivTurn(iPlayer)		-- called for full civs only
 		end
 		if 0 < numCSContacted then
 			if bPatronageDistributionFriendsOnly then
-				patronageDistribution = Floor(eaPlayer.cityStatePatronage / numCSFriends)
+				patronageDistribution = floor(eaPlayer.cityStatePatronage / numCSFriends)
 				eaPlayer.cityStatePatronage = eaPlayer.cityStatePatronage - patronageDistribution * numCSFriends
 			else
-				patronageDistribution = Floor(eaPlayer.cityStatePatronage / numCSContacted)
+				patronageDistribution = floor(eaPlayer.cityStatePatronage / numCSContacted)
 				eaPlayer.cityStatePatronage = eaPlayer.cityStatePatronage - patronageDistribution * numCSContacted
 			end
 		end
@@ -414,7 +431,7 @@ function FullCivPerCivTurn(iPlayer)		-- called for full civs only
 		cultFounderMana = cultFounderMana + eaPlayer.manaForCultOfAegirFounder
 	end
 	if gReligions[RELIGION_CULT_OF_PLOUTON] and iPlayer == gReligions[RELIGION_CULT_OF_PLOUTON].founder then
-		eaPlayer.manaForCultOfPloutonFounder = Floor(gg_counts.earthResWorkedByPloutonFollower / 2)
+		eaPlayer.manaForCultOfPloutonFounder = floor(gg_counts.earthResWorkedByPloutonFollower / 2)
 		cultFounderMana = cultFounderMana + eaPlayer.manaForCultOfPloutonFounder
 	end
 	if gReligions[RELIGION_CULT_OF_EPONA] and iPlayer == gReligions[RELIGION_CULT_OF_EPONA].founder then
@@ -456,10 +473,10 @@ function FullCivPerCivTurn(iPlayer)		-- called for full civs only
 		end
 		if 0 < numContacted then
 			if bTributeDistributionFriendsOnly then
-				tributeDistribution = Floor(eaPlayer.majorSpiritsTribute / numFriends)
+				tributeDistribution = floor(eaPlayer.majorSpiritsTribute / numFriends)
 				eaPlayer.majorSpiritsTribute = eaPlayer.majorSpiritsTribute - tributeDistribution * numFriends
 			else
-				tributeDistribution = Floor(eaPlayer.majorSpiritsTribute / numContacted)
+				tributeDistribution = floor(eaPlayer.majorSpiritsTribute / numContacted)
 				eaPlayer.majorSpiritsTribute = eaPlayer.majorSpiritsTribute - tributeDistribution * numContacted
 			end
 		end
@@ -496,7 +513,7 @@ function FullCivPerCivTurn(iPlayer)		-- called for full civs only
 		for i = beginTurn, gameTurn do
 			sum = sum + (eaPlayer.faerieTribute[i] or 0)
 		end
-		eaPlayer.faerieTribute.ave = Floor(sum / (gameTurn - beginTurn))		--used in EaDiplomacy.lua
+		eaPlayer.faerieTribute.ave = floor(sum / (gameTurn - beginTurn))		--used in EaDiplomacy.lua
 	end
 
 	--Natural Wonders
@@ -542,7 +559,7 @@ end
 GameEvents.PlayerMinorFriendshipAnchor.Add(OnPlayerMinorFriendshipAnchor)
 
 local function OnPlayerMinorFriendshipDecayMod(iMajorPlayer, iMinorPlayer)
-	print("OnPlayerMinorFriendshipDecayMod ", iMajorPlayer, iMinorPlayer)
+	--print("OnPlayerMinorFriendshipDecayMod ", iMajorPlayer, iMinorPlayer)
 	if cityStates[iMinorPlayer] then	--City States
 		if gg_bHasPatronage[iMajorPlayer] then
 			return -50
@@ -559,7 +576,7 @@ end
 GameEvents.PlayerMinorFriendshipDecayMod.Add(OnPlayerMinorFriendshipDecayMod)
 
 local function OnPlayerMinorFriendshipRecoveryMod(iMajorPlayer, iMinorPlayer)
-	print("OnPlayerMinorFriendshipRecoveryMod ", iMajorPlayer, iMinorPlayer)
+	--print("OnPlayerMinorFriendshipRecoveryMod ", iMajorPlayer, iMinorPlayer)
 	if cityStates[iMinorPlayer] then	--City States
 		if gg_bHasPatronage[iMajorPlayer] then
 			return 50
@@ -592,8 +609,9 @@ function CheckCapitalBuildings(iPlayer)
 end
 
 function UpdateFaithFromEaCityStatesForUI()
-	Dprint("UpdateFaithFromEaCityStatesForUI")
-	MapModData.faithFromCityStates = GetFaithFromEaCityStates(g_iActivePlayer)
+	if fullCivs[g_iActivePlayer] then
+		MapModData.faithFromCityStates = GetFaithFromEaCityStates(g_iActivePlayer)
+	end
 end
 LuaEvents.EaCivsUpdateFaithFromEaCityStatesForUI.Add(UpdateFaithFromEaCityStatesForUI)	--called when Arcane or Holy CS popup closed
 

@@ -22,6 +22,8 @@ local EACIV_NEZELIBA =						GameInfoTypes.EACIV_NEZELIBA
 local IMPROVEMENT_ARCANE_TOWER =			GameInfoTypes.IMPROVEMENT_ARCANE_TOWER
 local INVISIBLE_SUBMARINE =					GameInfoTypes.INVISIBLE_SUBMARINE
 local LEADER_FAND =							GameInfoTypes.LEADER_FAND
+local ORDER_CONSTRUCT =						OrderTypes.ORDER_CONSTRUCT
+local ORDER_TRAIN =							OrderTypes.ORDER_TRAIN
 local RELIGION_ANRA =						GameInfoTypes.RELIGION_ANRA
 local RELIGION_AZZANDARAYASNA =				GameInfoTypes.RELIGION_AZZANDARAYASNA
 local RELIGION_THE_WEAVE_OF_EA =			GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
@@ -47,7 +49,6 @@ local FIRST_SPELL_ID =						FIRST_SPELL_ID
 local GameInfoTypes =						GameInfoTypes
 local MapModData =							MapModData
 local fullCivs =							MapModData.fullCivs
-local bFullCivAI =							MapModData.bFullCivAI
 local gpRegisteredActions =					MapModData.gpRegisteredActions
 local gWorld =								gWorld
 local gCities =								gCities
@@ -56,16 +57,14 @@ local gPeople =								gPeople
 local gReligions =							gReligions
 local gWonders =							gWonders
 local gg_aiOptionValues =					gg_aiOptionValues
-local gg_playerValues =						gg_playerValues
 local gg_bToCheapToHire =					gg_bToCheapToHire
-local gg_bNormalCombatUnit =				gg_bNormalCombatUnit
-local gg_bNormalLivingCombatUnit =			gg_bNormalLivingCombatUnit
 local gg_normalizedUnitPower =				gg_normalizedUnitPower
 local gg_minorPlayerByTypeID =				gg_minorPlayerByTypeID
 local gg_playerPlotActionTargeted =			gg_playerPlotActionTargeted
+local gg_regularCombatType =				gg_regularCombatType
 
 --localized functions
-local Floor =								math.floor
+local floor =								math.floor
 local GetPlotByIndex =						Map.GetPlotByIndex
 local GetPlotFromXY =						Map.GetPlot
 local PlotDistance =						Map.PlotDistance
@@ -190,6 +189,10 @@ function EaActionsInit(bNewGame)
 		if eaPerson.eaActionID > 0 then	
 			local player = Players[iPlayer]
 			local unit = player:GetUnitByID(eaPerson.iUnit)
+			if not unit then
+				--this is happening in player loads; better to kill gp so they report it
+				KillPerson(iPlayer, iPerson)
+			end
 			local iPlot = unit:GetPlot():GetPlotIndex()
 			print("-setting gg_playerPlotActionTargeted for eaActionID ", iPlayer, iPlot, eaPerson.eaActionID, iPerson)
 			gg_playerPlotActionTargeted[iPlayer][iPlot] = gg_playerPlotActionTargeted[iPlayer][iPlot] or {}
@@ -222,13 +225,15 @@ function RegisterGPActions(iPerson)
 	local number = 1
 	for id = FIRST_GP_ACTION, FIRST_SPELL_ID - 1 do
 		local eaAction = EaActionsInfo[id]
-		if not eaAction.GPSubclass or eaAction.GPSubclass == subclass or (subclass and eaAction.OrGPSubclass == subclass) then
-			if not eaAction.GPClass or eaAction.GPClass == class1 or eaAction.GPClass == class2 or (eaAction.OrGPClass and (eaAction.OrGPClass == class1 or eaAction.OrGPClass == class2)) then
-				if not eaAction.ExcludeGPSubclass or eaAction.ExcludeGPSubclass ~= subclass then
-					if not eaAction.NotGPClass or (eaAction.NotGPClass ~= class1 and eaAction.NotGPClass ~= class1) then
-						actions[number] = id
-						number = number + 1
-					end
+		if not (eaAction.GPClass or eaAction.OrGPClass or eaAction.GPSubclass or eaAction.OrGPSubclass)				--pass if no class/subclass listed
+					or (eaAction.GPClass and (eaAction.GPClass == class1 or eaAction.GPClass == class2))			--pass if any class or subclass matches
+					or (eaAction.OrGPClass and (eaAction.OrGPClass == class1 or eaAction.OrGPClass == class2))
+					or (eaAction.GPSubclass and eaAction.GPSubclass == subclass)
+					or (eaAction.OrGPSubclass and eaAction.OrGPSubclass == subclass) then
+			if not eaAction.ExcludeGPSubclass or eaAction.ExcludeGPSubclass ~= subclass then
+				if not eaAction.NotGPClass or (eaAction.NotGPClass ~= class1 and eaAction.NotGPClass ~= class1) then
+					actions[number] = id
+					number = number + 1
 				end
 			end
 		end
@@ -363,7 +368,7 @@ local function FinishEaAction(eaActionID)		--only called from DoEaAction so file
 			for i = -1, HIGHEST_RELIGION_ID do
 				if g_tablePointer[i] > 0 then
 					--need percentage (round up or down???)
-					local convertPercent = Floor(1 + 100 * g_tablePointer[i] / g_city:GetNumFollowers(i))
+					local convertPercent = floor(1 + 100 * g_tablePointer[i] / g_city:GetNumFollowers(i))
 					g_city:ConvertPercentFollowers(cultID, i, convertPercent)
 				end
 			end
@@ -459,6 +464,11 @@ local function FinishEaAction(eaActionID)		--only called from DoEaAction so file
 	if Finish[eaActionID] and not Finish[eaActionID]() then return false end	--this is the custom Finish call
 
 	SpecialEffects()
+
+	if g_eaPerson.timeStop and g_unit then
+		CheckTimeStopUnit(g_unit, g_eaPerson)
+	end
+
 	return true
 end
 
@@ -557,7 +567,7 @@ function TestEaActionForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY
 		end
 	end
 
-	if SetUI[eaActionID] then
+	if not g_bEmbarked and SetUI[eaActionID] then
 		SetUI[eaActionID]()	--always set MapModData.bShow and MapModData.text together (need specific function if we want to show disabled button)
 	end
 
@@ -629,7 +639,7 @@ function TestEaAction(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTa
 		if g_eaPlayer.aiUniqueTargeted[eaActionID] and g_eaPlayer.aiUniqueTargeted[eaActionID] ~= iPerson then return false end	--ai specific exclude (someone on way to do this)
 		g_bAIControl = true
 	else
-		g_bAIControl = bFullCivAI[iPlayer]
+		g_bAIControl = not g_player:IsHuman()
 	end
 
 	g_unit = unit
@@ -992,7 +1002,13 @@ function DoEaAction(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 
 	if eaActionID == 0 then		--special go to plot function; just do or fail and skip the rest of this method
 		unit:SetInvisibleType(INVISIBLE_SUBMARINE)
-		return DoGotoPlot(iPlayer, unit, iPerson, targetX, targetY) 	--if targetX, Y == nil, then destination is from eaPerson.gotoPlotIndex
+		local bSuccess = DoGotoPlot(iPlayer, unit, iPerson, targetX, targetY) 	--if targetX, Y == nil, then destination is from eaPerson.gotoPlotIndex
+
+		if gPeople[iPerson].timeStop and g_unit then
+			CheckTimeStopUnit(unit, gPeople[iPerson])
+		end
+
+		return bSuccess
 	end
 
 	local bTest = TestEaAction(eaActionID, iPlayer, unit, iPerson, targetX, targetY, false)	--this will set all file variables we need
@@ -1061,14 +1077,14 @@ function DoEaAction(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 	--Finish moves
 	if g_eaAction.FinishMoves and g_unit then
 		g_unit:FinishMoves()
-	end
-
-	--Don't get stuck on unit with no moves
-	if g_iPlayer == g_iActivePlayer then
-		if UI.GetHeadSelectedUnit() and UI.GetHeadSelectedUnit():MovesLeft() == 0 then
-			print("EaAction.lua forcing unit cycle")
-			Game.CycleUnits(true, true, false)	--move on to next unit
-		end
+	
+		--Don't get stuck on unit with no moves
+		if g_iPlayer == g_iActivePlayer then
+			if UI.GetHeadSelectedUnit() and UI.GetHeadSelectedUnit():MovesLeft() == 0 then
+				print("EaAction.lua forcing unit cycle")
+				Game.CycleUnits(true, true, false)	--move on to next unit
+			end
+		end	
 	end
 
 	--Ongoing actions with turnsToComplete > 0 (DoEaAction is called each turn of construction)
@@ -1164,6 +1180,11 @@ function DoEaAction(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 		end
 
 	end
+
+	if g_eaPerson.timeStop and g_unit then
+		CheckTimeStopUnit(g_unit, g_eaPerson)
+	end
+
 	print("Reached end of DoEaAction, returning true")
 	return true
 end
@@ -1387,10 +1408,10 @@ end
 TestTarget[GameInfoTypes.EA_ACTION_RENDER_SLAVES] = function()
 	--city must be constructing building or military unit
 	orderType, g_int1 = g_city:GetOrderFromQueue(0)		--orderType, id
-	if orderType == OrderTypes.ORDER_TRAIN then
+	if orderType == ORDER_TRAIN then
 		g_bool1 = true
 		return true
-	elseif orderType == OrderTypes.ORDER_CONSTRUCT then
+	elseif orderType == ORDER_CONSTRUCT then
 		g_bool1 = false
 		return true
 	end
@@ -1466,7 +1487,7 @@ Do[GameInfoTypes.EA_ACTION_TAKE_LEADERSHIP] = function()
 	return true
 end
 
---EA_ACTION_TAKE_RESIDENCE
+--[[EA_ACTION_TAKE_RESIDENCE
 local classYields = {Warrior = -1, Engineer = YIELD_PRODUCTION, Merchant = YIELD_GOLD, Sage = YIELD_SCIENCE, Artist = YIELD_CULTURE, Devout = YIELD_FAITH, Thaumaturge = YIELD_FAITH}
 
 TestTarget[GameInfoTypes.EA_ACTION_TAKE_RESIDENCE] = function()
@@ -1628,6 +1649,7 @@ Interrupt[GameInfoTypes.EA_ACTION_TAKE_RESIDENCE] = function(iPlayer, iPerson)
 		end
 	end
 end
+]]
 
 --EA_ACTION_HEAL	(This is for AI only, since active player can just press Heal button)
 Test[GameInfoTypes.EA_ACTION_HEAL] = function()
@@ -1659,7 +1681,7 @@ TestTarget[GameInfoTypes.EA_ACTION_HEAL] = function()
 end
 
 SetAIValues[GameInfoTypes.EA_ACTION_HEAL] = function()
-	local value = g_int5 * g_int1 / 10
+	local value = g_int5 * g_int1 / 20
 	if g_unitX ~= g_x or g_unitY ~= g_y or g_bool1 then		--not this plot this turn
 		value = value - 20
 	end
@@ -1679,22 +1701,36 @@ end
 
 --EA_ACTION_BUILD
 TestTarget[GameInfoTypes.EA_ACTION_BUILD] = function()
-	g_int1 = Floor(g_mod * (g_city:GetBaseYieldRateModifier(YIELD_PRODUCTION)) / 200 + 0.5)
-	return true
-end
-
-SetUI[GameInfoTypes.EA_ACTION_BUILD] = function()
-	if g_bAllTestsPassed then
-		local cityProductionName = g_city:GetProductionNameKey()
-		if cityProductionName then
-			MapModData.text = "Provide " .. g_int1 .. " production per turn toward " .. Locale.ConvertTextKey(cityProductionName)
-		else
-			MapModData.text = "Provide " .. g_int1 .. " production per turn toward this city's next build selection"
-		end
+	local orderType, orderID = g_city:GetOrderFromQueue(0)
+	if orderType == ORDER_CONSTRUCT then
+		local mod = GetGPMod(g_iPerson, "EAMOD_CONSTRUCTION")
+		g_int1 = floor(mod * (g_city:GetBaseYieldRateModifier(YIELD_PRODUCTION)) / 200 + 0.5)
+		return true		
+	elseif orderType == ORDER_TRAIN and gg_regularCombatType[orderID] == "construct" then
+		local mod = GetGPMod(g_iPerson, "EAMOD_COMBAT_ENGINEERING")
+		g_int1 = floor(mod * (g_city:GetBaseYieldRateModifier(YIELD_PRODUCTION)) / 200 + 0.5)
+		return true		
+	else
+		g_testTargetSwitch = 1
+		return false
 	end
 end
 
-
+SetUI[GameInfoTypes.EA_ACTION_BUILD] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			local cityProductionName = g_city:GetProductionNameKey()
+			if cityProductionName then
+				MapModData.text = "Provide " .. g_int1 .. " production per turn toward " .. Locale.ConvertTextKey(cityProductionName)
+			else
+				MapModData.text = "Provide " .. g_int1 .. " production per turn toward this city's next build selection"
+			end
+		elseif g_testTargetSwitch == 1 then
+			MapModData.bShow = true
+			MapModData.text = "[COLOR_WARNING_TEXT]City must be constucting a building or a war construct (e.g., siege unit)[ENDCOLOR]"
+		end
+	end
+end
 
 SetAIValues[GameInfoTypes.EA_ACTION_BUILD] = function()
 	gg_aiOptionValues.b = g_int1	
@@ -1704,9 +1740,14 @@ Do[GameInfoTypes.EA_ACTION_BUILD] = function()
 	g_eaCity.gpProduction = g_eaCity.gpProduction or {}
 	g_eaCity.gpProduction[g_iPerson] = g_int1
 	g_eaPerson.eaActionData = g_iPlot
-	g_unit:ChangeExperience(g_int1)
 	if g_iPlayer == g_iActivePlayer then
 		UpdateCityYields(g_iPlayer, g_iCity, "Production")	--instant UI update for human
+		g_unit:PopMission()
+		g_unit:PushMission(MissionTypes.MISSION_SKIP, g_x, g_y, 0, 0, 1)
+		g_eaPerson.activePlayerEndTurnXP = g_int1
+	else
+		g_unit:ChangeExperience(g_int1)
+		g_unit:FinishMoves()
 	end
 	return true
 end
@@ -1716,18 +1757,21 @@ Interrupt[GameInfoTypes.EA_ACTION_BUILD] = function(iPlayer, iPerson)
 	local eaCityIndex = eaPerson.eaActionData
 	local eaCity = gCities[eaCityIndex]
 	eaPerson.eaActionData = -1
+	g_eaPerson.activePlayerEndTurnXP = nil
 	if eaCity and eaCity.gpProduction then
 		eaCity.gpProduction[iPerson] = nil
 		if iPlayer == g_iActivePlayer then
 			local iCity = GetPlotByIndex(eaCityIndex):GetPlotCity():GetID()
 			UpdateCityYields(iPlayer, iCity, "Production")
+			g_unit:DoCommand(CommandTypes.COMMAND_WAKE)
+			Events.SerialEventUnitInfoDirty()
 		end
 	end
 end
 
 --EA_ACTION_TRADE
 TestTarget[GameInfoTypes.EA_ACTION_TRADE] = function()
-	g_int1 = Floor(g_mod * (g_city:GetBaseYieldRateModifier(YIELD_GOLD)) / 200 + 0.5)
+	g_int1 = floor(g_mod * (g_city:GetBaseYieldRateModifier(YIELD_GOLD)) / 200 + 0.5)
 	return true
 end
 
@@ -1771,12 +1815,12 @@ TestTarget[GameInfoTypes.EA_ACTION_RESEARCH] = function()
 	local scienceModifier = g_city:GetBaseYieldRateModifier(YIELD_SCIENCE)
 	if scienceModifier >= 50 then
 		g_bool1 = true
-		g_int1 = Floor(g_mod * scienceModifier / 200 + 0.5)
+		g_int1 = floor(g_mod * scienceModifier / 200 + 0.5)
 	else
 		g_int2 = g_player:GetCurrentResearch()
 		if g_int2 == -1 then return false end
 		g_bool1 = false
-		g_int1 = Floor(g_mod / 4) + 1
+		g_int1 = floor(g_mod / 4) + 1
 	end
 	return true
 end
@@ -1835,7 +1879,7 @@ end
 
 --EA_ACTION_PERFORM
 TestTarget[GameInfoTypes.EA_ACTION_PERFORM] = function()
-	g_int1 = Floor(g_mod * (g_city:GetCultureRateModifier() + 100) / 200 + 0.5)
+	g_int1 = floor(g_mod * (g_city:GetCultureRateModifier() + 100) / 200 + 0.5)
 	return true
 end
 
@@ -1874,6 +1918,69 @@ Interrupt[GameInfoTypes.EA_ACTION_PERFORM] = function(iPlayer, iPerson)
 	end
 end
 
+--EA_ACTION_RECRUIT
+TestTarget[GameInfoTypes.EA_ACTION_RECRUIT] = function()
+	local orderType, orderID = g_city:GetOrderFromQueue(0)
+	if orderType == ORDER_TRAIN and gg_regularCombatType[orderID] == "troops" then
+		g_int1 = floor(g_mod * (g_city:GetBaseYieldRateModifier(YIELD_PRODUCTION)) / 200 + 0.5)
+		return true		
+	else
+		g_testTargetSwitch = 1
+		return false
+	end
+end
+
+SetUI[GameInfoTypes.EA_ACTION_RECRUIT] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			local cityProductionName = g_city:GetProductionNameKey()
+			if cityProductionName then
+				MapModData.text = "Provide " .. g_int1 .. " production per turn toward " .. Locale.ConvertTextKey(cityProductionName)
+			end
+		elseif g_testTargetSwitch == 1 then
+			MapModData.bShow = true
+			MapModData.text = "[COLOR_WARNING_TEXT]City must be training a living (non-construct) combat unit[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_ACTION_RECRUIT] = function()
+	gg_aiOptionValues.b = g_int1	
+end
+
+Do[GameInfoTypes.EA_ACTION_RECRUIT] = function()
+	g_eaCity.gpProduction = g_eaCity.gpProduction or {}
+	g_eaCity.gpProduction[g_iPerson] = g_int1
+	g_eaPerson.eaActionData = g_iPlot
+	if g_iPlayer == g_iActivePlayer then
+		UpdateCityYields(g_iPlayer, g_iCity, "Production")	--instant UI update for human
+		g_unit:PopMission()
+		g_unit:PushMission(MissionTypes.MISSION_SKIP, g_x, g_y, 0, 0, 1)
+		g_eaPerson.activePlayerEndTurnXP = g_int1
+	else
+		g_unit:ChangeExperience(g_int1)
+		g_unit:FinishMoves()
+	end
+	return true
+end
+
+Interrupt[GameInfoTypes.EA_ACTION_RECRUIT] = function(iPlayer, iPerson)
+	local eaPerson = gPeople[iPerson]
+	local eaCityIndex = eaPerson.eaActionData
+	local eaCity = gCities[eaCityIndex]
+	eaPerson.eaActionData = -1
+	g_eaPerson.activePlayerEndTurnXP = nil
+	if eaCity and eaCity.gpProduction then
+		eaCity.gpProduction[iPerson] = nil
+		if iPlayer == g_iActivePlayer then
+			local iCity = GetPlotByIndex(eaCityIndex):GetPlotCity():GetID()
+			UpdateCityYields(iPlayer, iCity, "Production")
+			g_unit:DoCommand(CommandTypes.COMMAND_WAKE)
+			Events.SerialEventUnitInfoDirty()
+		end
+	end
+end
+
 --EA_ACTION_WORSHIP
 Test[GameInfoTypes.EA_ACTION_WORSHIP] = function()
 	g_value = g_gameTurn / (g_player:GetFaith() + 5)		--AI prioritizes when low; doesn't try to hoard early
@@ -1882,18 +1989,18 @@ end
 
 SetUI[GameInfoTypes.EA_ACTION_WORSHIP] = function()
 	if g_bAllTestsPassed then
-		local pts = Floor(g_mod / 2)
+		local pts = floor(g_mod / 2)
 		local yieldText = g_eaPlayer.bUsesDivineFavor and "Divine Favor" or "Mana"
 		MapModData.text = "Provide " .. pts .. " " .. yieldText .. " per turn"
 	end
 end
 
 SetAIValues[GameInfoTypes.EA_ACTION_WORSHIP] = function()
-	gg_aiOptionValues.b = Floor(g_mod / 2) * g_value
+	gg_aiOptionValues.b = floor(g_mod / 2) * g_value
 end
 
 Do[GameInfoTypes.EA_ACTION_WORSHIP] = function()
-	local pts = Floor(g_mod / 2)
+	local pts = floor(g_mod / 2)
 	g_eaCity.gpFaith = g_eaCity.gpFaith or {}
 	g_eaCity.gpFaith[g_iPerson] = pts
 	g_eaPerson.eaActionData = g_iPlot
@@ -1932,7 +2039,7 @@ SetUI[GameInfoTypes.EA_ACTION_CHANNEL] = function()
 	if g_bNonTargetTestsPassed then		--has spell so show it
 		MapModData.bShow = true
 		if g_bAllTestsPassed then
-			local pts = Floor(g_mod / 2)
+			local pts = floor(g_mod / 2)
 			local iCity = g_plot:GetCityPurchaseID()
 			local city = g_player:GetCityByID(iCity)
 			local cityName = city:GetName()
@@ -1944,11 +2051,11 @@ SetUI[GameInfoTypes.EA_ACTION_CHANNEL] = function()
 end
 
 SetAIValues[GameInfoTypes.EA_ACTION_CHANNEL] = function()
-	gg_aiOptionValues.b = Floor(g_mod / 2) * g_value
+	gg_aiOptionValues.b = floor(g_mod / 2) * g_value
 end
 
 Do[GameInfoTypes.EA_ACTION_CHANNEL] = function()
-	local pts = Floor(g_mod / 2)
+	local pts = floor(g_mod / 2)
 	local iCity = g_plot:GetCityPurchaseID()
 	local city = g_player:GetCityByID(iCity)
 	local eaCity = gCities[city:Plot():GetPlotIndex()]
@@ -2002,9 +2109,9 @@ TestTarget[GameInfoTypes.EA_ACTION_LEAD_CHARGE] = function()
 	local unitCount = g_plot:GetNumUnits()
 	for i = 0, unitCount - 1 do
 		local unit = g_plot:GetUnit(i)
-		if unit ~= g_unit and unit:GetOwner() == g_iPlayer and not unit:IsOnlyDefensive() then
+		if unit ~= g_unit and unit:GetOwner() == g_iPlayer and not unit:IsOnlyDefensive() and 0 < unit:GetMoves() then
 			local unitTypeID = unit:GetUnitType()
-			if gg_bNormalLivingCombatUnit[unitTypeID] then
+			if gg_regularCombatType[unitTypeID] == "troops" then
 				print("EA_ACTION_LEAD_CHARGE has a same-plot melee unit")
 				g_obj2 = unit
 				g_int4 = unit:GetCurrHitPoints()
@@ -2035,7 +2142,6 @@ TestTarget[GameInfoTypes.EA_ACTION_LEAD_CHARGE] = function()
 					end
 				end
 				if bestValue ~= -9999 then
-					g_int1 = g_mod * 2
 					g_int2 = bestValue + 100
 					return true
 				else
@@ -2052,8 +2158,8 @@ SetUI[GameInfoTypes.EA_ACTION_LEAD_CHARGE] = function()
 	if g_bAllTestsPassed then
 		local unitTypeID = g_obj2:GetUnitType()
 		local unitText = Locale.ConvertTextKey(GameInfo.Units[unitTypeID].Description)
-		MapModData.text = "Your " .. unitText .. " will follow their general's charge with +" .. g_int1 .. " morale boost"
-		--MapModData.text = "Increase morale of " .. unitText .. " by " .. g_int1 .. " for next attack (" .. g_int2 .."% chance of death with attack)"
+		local moraleBoost = 2 * GetGPMod(g_iPerson, "EAMOD_LEADERSHIP")
+		MapModData.text = "Your " .. unitText .. " will follow their general's charge with +" .. moraleBoost .. " morale boost"
 	end
 end
 
@@ -2064,7 +2170,7 @@ SetAIValues[GameInfoTypes.EA_ACTION_LEAD_CHARGE] = function()
 	elseif g_eaPlayer.race == EARACE_HELDEOFOL then
 		raceMultiplier = 2
 	end
-	gg_aiOptionValues.i = raceMultiplier * (g_mod * g_int3 * g_int4 * g_int5 / 10000 + g_int2)	
+	gg_aiOptionValues.i = raceMultiplier * (g_mod * g_int3 * g_int4 * g_int5 * g_int2 / 10000000)	
 end
 
 Do[GameInfoTypes.EA_ACTION_LEAD_CHARGE] = function()
@@ -2076,7 +2182,8 @@ Do[GameInfoTypes.EA_ACTION_LEAD_CHARGE] = function()
 		local targetX, targetY = g_obj1:GetX(), g_obj1:GetY()
 		g_unit:PushMission(MissionTypes.MISSION_MOVE_TO, targetX, targetY)		--, 0, 0, 1)
 		if g_unit and g_unit:MovesLeft() > 0  then
-			error("AI GP has movement after Lead Charge! Did it not attack?")
+			print("!!!! ERROR: AI GP has movement after Lead Charge! Did it not attack?", g_unit:MovesLeft())
+			g_unit:SetMoves(0)
 		end
 		--follow-up melee attack and GPAttackState reset will happen from OnCombatEnded
 
@@ -2093,19 +2200,17 @@ end
 
 
 --EA_ACTION_RALLY_TROOPS
---TO DO: make this a single plot action
 TestTarget[GameInfoTypes.EA_ACTION_RALLY_TROOPS] = function()
 	--Must be melee attack unit with enemy in range in same or adjacent plot
 	local numQualifiedUnits = 0
 	local value = 0
-	for x, y in PlotToRadiusIterator(g_x, g_y, 1) do
-		local plot = GetPlotFromXY(x, y)
+	for plot in AdjacentPlotIterator(g_plot) do
 		local unitCount = plot:GetNumUnits()
 		for i = 0, unitCount - 1 do
 			local unit = plot:GetUnit(i)
 			if unit:GetOwner() == g_iPlayer and unit:IsCanAttack() then
 				local unitTypeID = unit:GetUnitType()
-				if gg_bNormalLivingCombatUnit[unitTypeID] and unit:IsEnemyInMovementRange(false, false) then
+				if gg_regularCombatType[unitTypeID] == "troops" and unit:IsEnemyInMovementRange(false, false) then
 					numQualifiedUnits = numQualifiedUnits + 1
 					g_table[numQualifiedUnits] = unit
 					value = value + unit:GetPower()
@@ -2123,7 +2228,7 @@ end
 
 SetUI[GameInfoTypes.EA_ACTION_RALLY_TROOPS] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = "Increase morale for " .. g_int1 .. " nearby unit(s) by " .. (g_mod * 2)
+		MapModData.text = "Increase morale for " .. g_int1 .. " adjacent unit(s) by " .. g_mod
 	end
 end
 
@@ -2138,21 +2243,200 @@ Do[GameInfoTypes.EA_ACTION_RALLY_TROOPS] = function()
 		unit:GetPlot():AddFloatUpMessage(floatUp, 1)
 		unit:ChangeMorale(g_mod)
 	end
-	local xp = Floor(g_mod * g_value / 1000)
+	local xp = floor(g_mod * g_value / 1000)
 	g_unit:ChangeExperience(xp)
 	g_specialEffectsPlot = g_plot
 	return true
 end
 
---EA_ACTION_TRAIN_UNIT
-TestTarget[GameInfoTypes.EA_ACTION_TRAIN_UNIT] = function()
+--EA_ACTION_SHRUG_OFF_INJURIES
+Test[GameInfoTypes.EA_ACTION_SHRUG_OFF_INJURIES] = function()		--gain additional effect of healing if not moved yet
+
+	g_int1 = g_unit:GetDamage()
+	if 0 < g_int1 then
+		g_int2 = FRIENDLY_HEAL_RATE + g_unit:GetExtraFriendlyHeal()
+		g_int3 = NEUTRAL_HEAL_RATE + g_unit:GetExtraNeutralHeal()
+		g_bool1 = g_unit:HasMoved()
+		g_int4 = g_int1 < g_mod and g_int1 or g_mod		--amount to shrug off
+		g_int5 = g_int1 - g_int4						--ramainder to possibly heal
+		return true
+	end
+	return false 
+end
+
+TestTarget[GameInfoTypes.EA_ACTION_SHRUG_OFF_INJURIES] = function()
+	if g_int5 > g_int3 then
+		local bFriendlyHeal = false
+		if g_iOwner == g_iPlayer then
+			bFriendlyHeal = true
+		elseif g_iOwner ~= -1 then
+			if g_iOwner < MAX_MAJOR_CIVS then
+				bFriendlyHeal = Teams[Players[g_iOwner]:GetTeam()]:IsAllowsOpenBordersToTeam(g_iTeam)
+			else
+				bFriendlyHeal = Players[g_iOwner]:IsFriends(g_iPlayer)
+			end
+		end
+		if bFriendlyHeal then
+			g_int5 = g_int5 < g_int2 and g_int5 or g_int2
+		else
+			g_int5 = g_int3
+		end
+	end
+	return true
+end
+
+SetUI[GameInfoTypes.EA_ACTION_SHRUG_OFF_INJURIES] = function()
+	if g_bAllTestsPassed then
+		if g_bool1 or g_int5 < 1 then
+			MapModData.text = "Shrug off " .. g_int4 .. " hit points from current damage"
+		else
+			MapModData.text = "Shrug off " .. g_int4 .. " hit points from current damage (and heal normal " .. g_int5 .. "hit points)"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_ACTION_SHRUG_OFF_INJURIES] = function()	--unlike heal, AI is only looking at self plot
+	local value = g_int4
+	if not g_bool1 then
+		value = value + g_int5
+	end
+	gg_aiOptionValues.i = value * g_int1 / 20
+end
+
+Do[GameInfoTypes.EA_ACTION_SHRUG_OFF_INJURIES] = function()
+	local heal = g_int4 + (g_bool1 and 0 or g_int5)
+	g_unit:ChangeDamage(-heal, -1)
+	g_unit:ChangeExperience(g_int4)
+	return true
+end
+
+--EA_ACTION_RESTORE_TROOPS
+TestTarget[GameInfoTypes.EA_ACTION_RESTORE_TROOPS] = function()
+	--Must be combat unit at plot
+	local unitCount = g_plot:GetNumUnits()
+	for i = 0, unitCount - 1 do
+		local unit = g_plot:GetUnit(i)
+		if unit:GetOwner() == g_iPlayer then
+			local unitTypeID = unit:GetUnitType()
+			if gg_regularCombatType[unitTypeID] == "troops" then
+				g_int1 = unit:GetDamage()
+				if 0 < g_int1 then
+					g_obj1 = unit
+					g_int2 = unitTypeID
+					g_int3 = g_int1 < g_mod and g_int1 or g_mod
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+SetUI[GameInfoTypes.EA_ACTION_RESTORE_TROOPS] = function()
+	if g_bAllTestsPassed then
+		local unitText = Locale.ConvertTextKey(GameInfo.Units[g_int2].Description)
+		MapModData.text = "Restore " .. g_int3 .. " hit points to same-plot " .. unitText
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_ACTION_RESTORE_TROOPS] = function()
+	gg_aiOptionValues.i = g_int3 * g_obj1:GetPower() * g_int1 / 500			
+end
+
+Do[GameInfoTypes.EA_ACTION_RESTORE_TROOPS] = function()
+	g_obj1:ChangeDamage(-g_int3, -1)
+	g_unit:ChangeExperience(g_int3)
+	return true
+end
+
+--EA_ACTION_REPAIR_WAR_CONSTRUCTS
+TestTarget[GameInfoTypes.EA_ACTION_REPAIR_WAR_CONSTRUCTS] = function()
+	--Must be combat unit at plot
+	local unitCount = g_plot:GetNumUnits()
+	for i = 0, unitCount - 1 do
+		local unit = g_plot:GetUnit(i)
+		if unit:GetOwner() == g_iPlayer then
+			local unitTypeID = unit:GetUnitType()
+			if gg_regularCombatType[unitTypeID] == "construct" then
+				g_int1 = unit:GetDamage()
+				if 0 < g_int1 then
+					g_obj1 = unit
+					g_int2 = unitTypeID
+					g_int3 = g_int1 < g_mod and g_int1 or g_mod
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+SetUI[GameInfoTypes.EA_ACTION_REPAIR_WAR_CONSTRUCTS] = function()
+	if g_bAllTestsPassed then
+		local unitText = Locale.ConvertTextKey(GameInfo.Units[g_int2].Description)
+		MapModData.text = "Restore " .. g_int3 .. " hit points to same-plot " .. unitText
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_ACTION_REPAIR_WAR_CONSTRUCTS] = function()
+	gg_aiOptionValues.i = g_int3 * g_obj1:GetPower() * g_int1 / 2000			
+end
+
+Do[GameInfoTypes.EA_ACTION_REPAIR_WAR_CONSTRUCTS] = function()
+	g_obj1:ChangeDamage(-g_int3, -1)
+	g_unit:ChangeExperience(g_int3)
+	return true
+end
+
+
+--EA_ACTION_REPAIR_SHIPS
+TestTarget[GameInfoTypes.EA_ACTION_REPAIR_SHIPS] = function()
+	--Must be combat unit at plot
+	local unitCount = g_plot:GetNumUnits()
+	for i = 0, unitCount - 1 do
+		local unit = g_plot:GetUnit(i)
+		if unit:GetOwner() == g_iPlayer then
+			local unitTypeID = unit:GetUnitType()
+			if gg_regularCombatType[unitTypeID] == "ship" then
+				g_int1 = unit:GetDamage()
+				if 0 < g_int1 then
+					g_obj1 = unit
+					g_int2 = unitTypeID
+					g_int3 = g_int1 < g_mod and g_int1 or g_mod
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+SetUI[GameInfoTypes.EA_ACTION_REPAIR_SHIPS] = function()
+	if g_bAllTestsPassed then
+		local unitText = Locale.ConvertTextKey(GameInfo.Units[g_int2].Description)
+		MapModData.text = "Restore " .. g_int3 .. " hit points to same-plot " .. unitText
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_ACTION_REPAIR_SHIPS] = function()
+	gg_aiOptionValues.i = g_int3 * g_obj1:GetPower() * g_int1 / 2000			
+end
+
+Do[GameInfoTypes.EA_ACTION_REPAIR_SHIPS] = function()
+	g_obj1:ChangeDamage(-g_int3, -1)
+	g_unit:ChangeExperience(g_int3)
+	return true
+end
+
+--EA_ACTION_TRAIN
+TestTarget[GameInfoTypes.EA_ACTION_TRAIN] = function()
 	--Must be combat unit at plot
 	local unitCount = g_plot:GetNumUnits()
 	for i = 0, unitCount - 1 do
 		local unit = g_plot:GetUnit(i)
 		if unit:GetOwner() == g_iPlayer and unit:GetDamage() == 0 then
 			local unitTypeID = unit:GetUnitType()
-			if gg_bNormalLivingCombatUnit[unitTypeID] then
+			if gg_regularCombatType[unitTypeID] == "troops" then
 				g_obj1 = unit
 				g_int1 = unitTypeID
 				return true
@@ -2162,20 +2446,20 @@ TestTarget[GameInfoTypes.EA_ACTION_TRAIN_UNIT] = function()
 	return false
 end
 
-SetUI[GameInfoTypes.EA_ACTION_TRAIN_UNIT] = function()
+SetUI[GameInfoTypes.EA_ACTION_TRAIN] = function()
 	if g_bAllTestsPassed then
 		local unitText = Locale.ConvertTextKey(GameInfo.Units[g_int1].Description)
-		local xp = Floor(g_mod / 2)
+		local xp = floor(g_mod / 2)
 		MapModData.text = "Provide " .. unitText .. " with " .. xp .. " experience per turn"
 	end
 end
 
-SetAIValues[GameInfoTypes.EA_ACTION_TRAIN_UNIT] = function()
-	gg_aiOptionValues.i = g_mod * g_obj1:GetPower()			
+SetAIValues[GameInfoTypes.EA_ACTION_TRAIN] = function()
+	gg_aiOptionValues.i = g_mod * g_obj1:GetPower() / 100
 end
 
-Do[GameInfoTypes.EA_ACTION_TRAIN_UNIT] = function()
-	local xp = Floor(g_mod / 2)	--give to unit and GP
+Do[GameInfoTypes.EA_ACTION_TRAIN] = function()
+	local xp = floor(g_mod / 2)	--give to unit and GP
 	g_obj1:ChangeExperience(xp)
 	g_unit:ChangeExperience(xp)
 	return true
@@ -2849,6 +3133,11 @@ SetUI[GameInfoTypes.EA_ACTION_EPIC_VOLUSPA] = function()
 	end
 end
 
+Finish[GameInfoTypes.EA_ACTION_EPIC_VOLUSPA] = function()
+	g_eaPlayer.culturalLevel = g_eaPlayer.culturalLevel + g_mod/10
+	return true
+end
+
 --EA_ACTION_EPIC_HAVAMAL
 SetUI[GameInfoTypes.EA_ACTION_EPIC_HAVAMAL] = function()
 	if g_bAllTestsPassed then
@@ -2899,7 +3188,7 @@ end
 --EA_ACTION_TOME_OF_EQUUS
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_EQUUS] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Horseback Riding and War Horses[NEWLINE]"..Floor(g_mod/2).. "experience for horse-mounted units"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Animal Husbandry, Stirrups, Animal Industry, Animal Breeding and War Horses[NEWLINE]"..floor(g_mod/2).. "experience for horse-mounted units"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2908,7 +3197,7 @@ end
 
 Finish[GameInfoTypes.EA_ACTION_TOME_OF_EQUUS] = function()
 	--Creator gets xp boost for existing horse-mounted (thereafter, only given for new units)
-	local xpChange = Floor(g_mod/2)
+	local xpChange = floor(g_mod/2)
 	for unit in g_player:Units() do
 		if unit:GetUnitCombatType() == UNITCOMBAT_MOUNTED then
 			unit:ChangeExperience(xpChange)
@@ -2920,7 +3209,7 @@ end
 --EA_ACTION_TOME_OF_BEASTS
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_BEASTS] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 1.5).."% faster research for Mounted Elephants, War Elephants, Domestication, Animal Breeding, Tracking, Animal Mastery and Beast Breeding"
+		MapModData.text = (g_mod * 1.5).."% reduced research cost for Tracking & Trapping, Elephant Training, Gamekeeping, Animal Mastery, War Elephants, Beast Mastery and Mumakil Riding"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2930,7 +3219,7 @@ end
 --EA_ACTION_TOME_OF_THE_LEVIATHAN
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_THE_LEVIATHAN] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Harpoons, Sailing, Shipbuilding and Whaling[NEWLINE]+2 research from Whales"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Sailing, Shipbuilding, Navigation, Beast Mastery, Whaling and Song of Leviathan[NEWLINE]+2 research from worked Whales"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2940,7 +3229,7 @@ end
 --EA_ACTION_TOME_OF_HARVESTS
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_HARVESTS] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Milling, Zymurgy, Irrigation, Calendar, Crop Rotation and Forestry[NEWLINE]+1 food from improved Wheat, Wine, Sugar and Citrus"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Milling, Weaving, Zymurgy, Calendar, Forestry, Fine Textiles, Oenology and Crop Rotation"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2950,7 +3239,7 @@ end
 --EA_ACTION_TOME_OF_TOMES
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_TOMES] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Logic, Metaphysics and Transcendental Thought[NEWLINE]Provides 1/3 benifit from all other existing Tomes"
+		MapModData.text = "Gain 20% of the benefit of all other Tomes in the world, regardless of owner"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2960,7 +3249,7 @@ end
 --EA_ACTION_TOME_OF_AESTHETICS
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_AESTHETICS] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Drama, Literature, Music and Æsthetics[NEWLINE]+"..g_mod.."% culture in all cities"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Philosophy, Mathematics, Literature, Music, Æsthetics, and Ethereal Architecture"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2970,7 +3259,7 @@ end
 --EA_ACTION_TOME_OF_AXIOMS
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_AXIOMS] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Mathematics, Physics, Chemistry, Astronomy, Alchemy and Medicine[NEWLINE]+5% research from Universities"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Astronomy, Alchemy, Mechanics, Chemistry, Medicine, Machinery and Steam Power"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library"
@@ -2980,7 +3269,7 @@ end
 --EA_ACTION_TOME_OF_FORM
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_FORM] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Masonry, Construction, Engineering and Architecture[NEWLINE]+"..g_mod.."% construction all buildings and wonders"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Construction, Sanitation, Engineering, Metal Casting, Architecture, Machinery and Ethereal Architecture"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -2990,7 +3279,7 @@ end
 --EA_ACTION_TOME_OF_METALLURGY
 SetUI[GameInfoTypes.EA_ACTION_TOME_OF_METALLURGY] = function()
 	if g_bAllTestsPassed then
-		MapModData.text = (g_mod * 2).."% faster research for Bronze Working, Iron Working, Metal Casting and Mithril Working[NEWLINE]+1p from mined copper, iron, mithril[NEWLINE]+1g from mined silver, gold"
+		MapModData.text = (g_mod * 2).."% reduced research cost for Coinage, Iron Working, Metal Casting, Steel Working, Elemental Forging and Mithril Working"
 	elseif g_bNonTargetTestsPassed then
 		MapModData.bShow = true
 		MapModData.text = "[COLOR_WARNING_TEXT]Tomes can be written in cities with a library[ENDCOLOR]"
@@ -3396,7 +3685,7 @@ Finish[GameInfoTypes.EA_ACTION_PROSELYTIZE] = function()
 		if g_tablePointer[i] > 0 then
 			print("about to convert", i, g_tablePointer[i])
 			--need percentage (round up or down???)
-			local convertPercent = Floor(1 + 100 * g_tablePointer[i] / g_city:GetNumFollowers(i))
+			local convertPercent = floor(1 + 100 * g_tablePointer[i] / g_city:GetNumFollowers(i))
 			g_city:ConvertPercentFollowers(RELIGION_AZZANDARAYASNA, i, convertPercent)
 		end
 	end
@@ -3453,7 +3742,7 @@ Finish[GameInfoTypes.EA_ACTION_ANTIPROSELYTIZE] = function()
 	for i = -1, HIGHEST_RELIGION_ID do
 		if g_tablePointer[i] > 0 then
 			--need percentage (round up or down???)
-			local convertPercent = Floor(1 + 100 * g_tablePointer[i] / g_city:GetNumFollowers(i))
+			local convertPercent = floor(1 + 100 * g_tablePointer[i] / g_city:GetNumFollowers(i))
 			g_city:ConvertPercentFollowers(RELIGION_ANRA, i, convertPercent)
 		end
 	end
