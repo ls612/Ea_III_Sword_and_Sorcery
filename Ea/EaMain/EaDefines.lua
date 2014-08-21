@@ -12,41 +12,30 @@ for k, v in pairs(MapModData) do
 end
 
 --------------------------------------------------------------
--- Debug
+-- Debug / Under-Construction
 --------------------------------------------------------------
 
 ENABLE_PRINT = true
 DEBUG_PRINT = false
 MapModData.DEBUG_PRINT = DEBUG_PRINT
 MapModData.bDebugShowHiddenBuildings = false
-
 MapModData.bDisableEnabledPolicies = true
 
 --------------------------------------------------------------
--- Settings
+-- Game Speed and Map Size adjustments
 --------------------------------------------------------------
 
-UNADJUSTED_STARTING_SUM_OF_ALL_MANA = 300000
-MOD_MEMORY_HALFLIFE = 30	--What AI is doing now is twice as important as this many turns ago
+local gameSpeedMultipliers = {	[GameInfoTypes.GAMESPEED_QUICK] =		2/3,
+								[GameInfoTypes.GAMESPEED_STANDARD] =	1,
+								[GameInfoTypes.GAMESPEED_EPIC] =		3/2,
+								[GameInfoTypes.GAMESPEED_MARATHON] =	2	}
 
---------------------------------------------------------------
--- Global Constants
---------------------------------------------------------------
-
-WeakKeyMetatable = {__mode = "k"}
-OutOfRangeReturnZeroMetaTable = {__index = function() return 0 end}	--return 0 rather than nil for out of range index
-
-local gameSpeedMultipliers = {	[GameInfoTypes.GAMESPEED_QUICK] = 0.67,
-								[GameInfoTypes.GAMESPEED_STANDARD] = 1,
-								[GameInfoTypes.GAMESPEED_EPIC] = 1.33,
-								[GameInfoTypes.GAMESPEED_MARATHON] = 2	}
-
-local mapSizeMultipliers = {	[GameInfoTypes.WORLDSIZE_DUEL] = 0.5,
-								[GameInfoTypes.WORLDSIZE_TINY] = 0.5,
-								[GameInfoTypes.WORLDSIZE_SMALL] = 0.67,
-								[GameInfoTypes.WORLDSIZE_STANDARD] = 1,	
-								[GameInfoTypes.WORLDSIZE_LARGE ] = 1.33,
-								[GameInfoTypes.WORLDSIZE_HUGE ] = 2	}
+local mapSizeMultipliers = {	[GameInfoTypes.WORLDSIZE_DUEL] =		1/2,
+								[GameInfoTypes.WORLDSIZE_TINY] =		1/2,
+								[GameInfoTypes.WORLDSIZE_SMALL] =		2/3,
+								[GameInfoTypes.WORLDSIZE_STANDARD] =	1,	
+								[GameInfoTypes.WORLDSIZE_LARGE ] =		3/2,
+								[GameInfoTypes.WORLDSIZE_HUGE ] =		2	}
 
 GAME_SPEED = Game.GetGameSpeedType()
 MAP_SIZE = Map.GetWorldSize()
@@ -58,9 +47,42 @@ MapModData.MAP_SIZE = MAP_SIZE
 MapModData.GAME_SPEED_MULTIPLIER = GAME_SPEED_MULTIPLIER
 MapModData.MAP_SIZE_MULTIPLIER = MAP_SIZE_MULTIPLIER
 
-print("Game speed, map size, speed multiplier, size multiplier = ", gameSpeed, mapSize, GAME_SPEED_MULTIPLIER, MAP_SIZE_MULTIPLIER)
+print("Game speed, map size, speed multiplier, size multiplier = ", GAME_SPEED, MAP_SIZE, GAME_SPEED_MULTIPLIER, MAP_SIZE_MULTIPLIER)
 
-MapModData.STARTING_SUM_OF_ALL_MANA = math.floor(UNADJUSTED_STARTING_SUM_OF_ALL_MANA * GAME_SPEED_MULTIPLIER * MAP_SIZE_MULTIPLIER)
+--------------------------------------------------------------
+-- Settings
+--------------------------------------------------------------
+
+EaSettings = {}						--Find Ea gameplay settings in EaTables/_EaSettings.sql
+MapModData.EaSettings = EaSettings	
+print("Adjusted Ea Game Settings:")
+for row in GameInfo.EaSettings() do
+	local value = row.Value
+	local multiplier = row.GameLengthExp and GAME_SPEED_MULTIPLIER ^ row.GameLengthExp or 1
+	multiplier = multiplier * (row.MapSizeExp and MAP_SIZE_MULTIPLIER ^ row.MapSizeExp or 1)
+	if multiplier ~= 1 then
+		value = value * multiplier
+		if row.RoundAdjVal == 1 then
+			value = math.floor(value + 0.5)
+		end
+		if row.Max then
+			value = row.Max < value and row.Max or value
+		end
+		if row.Min then
+			value = value < row.Min and row.Min or value
+		end
+	end
+	print(row.Name, value)
+	EaSettings[row.Name] = value
+end
+
+--------------------------------------------------------------
+-- Global Constants
+--------------------------------------------------------------
+
+WeakKeyMetatable = {__mode = "k"}
+OutOfRangeReturnZeroMetaTable = {__index = function() return 0 end}	--return 0 rather than nil for out of range index
+
 
 UNIT_SUFFIXES = {"_MAN", "_SIDHE", "_ORC"}
 
@@ -83,6 +105,8 @@ GP_TXT_KEYS = {	Engineer = "TXT_KEY_EA_ENGINEER",
 				Wizard = "TXT_KEY_EA_WIZARD",
 				Sorcerer = "TXT_KEY_EA_SORCERER",
 				Necromancer = "TXT_KEY_EA_NECROMANCER",
+				Mage = "TXT_KEY_EA_MAGE",
+				Archmage = "TXT_KEY_EA_ARCHMAGE",
 				Lich = "TXT_KEY_EA_LICH"	}
 MapModData.GP_TXT_KEYS = GP_TXT_KEYS
 
@@ -188,6 +212,17 @@ for unitInfo in GameInfo.Units() do
 	end
 end
 
+gg_techTier = {}
+gg_eaTechClass = {}
+for techInfo in GameInfo.Technologies() do
+	if not techInfo.Utility then
+		gg_techTier[techInfo.ID] = techInfo.GridX + 1
+		if techInfo.EaTechClass then
+			gg_eaTechClass[techInfo.ID] = techInfo.EaTechClass
+		end
+	end
+end
+
 
 MapModData.civNamesByRace = MapModData.civNamesByRace or {}
 local civNamesByRace = MapModData.civNamesByRace
@@ -202,8 +237,9 @@ for row in GameInfo.EaCiv_Races() do
 	end
 end
 
-gg_naturalWonders = {}	--index by featureID; filled in EaPlots Init
-
+--filled in EaPlotsInit
+gg_naturalWonders = {}	--index by featureID; holds table with some NW info
+gg_cachedMapPlots = {}	--keep some specific plot tables here that don't change (most =true so we can do index test)
 ----------------------------------------------------------------------------------------------------------------------------
 -- Non-preserved globals 
 ----------------------------------------------------------------------------------------------------------------------------
@@ -259,29 +295,14 @@ gg_counts = {	freshWaterAbzuFollowerCities = 0,
 --Other shared tables
 MapModData.gpRegisteredActions = MapModData.gpRegisteredActions or {}
 
---human player UI
-MapModData.kmPerTechPerCitizen = 0
-MapModData.knowlMaint = 0
-MapModData.techCount = 0
-MapModData.totalPopulationForKM = 0
-MapModData.mercenaryNet = 0
-MapModData.cultureLevel = 0
-MapModData.nextCultureLevel = 0
-MapModData.estCultureLevelChange = 0
-MapModData.approachingCulturalLevel = 0
-MapModData.cultureRate = 0
-MapModData.faithFromCityStates = 0
-MapModData.faithFromAzzTribute = 0
-MapModData.faithFromToAhrimanTribute = 0
-MapModData.faithFromGPs = 0
-MapModData.numberGreatPeople = 0
-MapModData.totalGreatPersonPoints = 0
-
 --Active player UI
-MapModData.kmPerTechPerCitizen = 0
 MapModData.knowlMaint = 0
 MapModData.techCount = 0
 MapModData.totalPopulationForKM = 0
+MapModData.intelligentArchiveKMReduction = 0
+MapModData.kmPerTechPerCitizen = 0
+MapModData.civKMPercent = 0
+MapModData.greatLibraryKMPercent = 0
 MapModData.mercenaryNet = 0
 MapModData.cultureLevel = 0
 MapModData.nextCultureLevel = 0
@@ -295,11 +316,11 @@ MapModData.faithFromGPs = 0
 MapModData.numberGreatPeople = 0
 MapModData.totalGreatPersonPoints = 0
 MapModData.totalLivingTerrainStrength = 0
-MapModData.validForestJunglePlots = 0
-MapModData.originalForestJunglePlots = 0
-MapModData.harmonicMeanDenominator = 0
-MapModData.ownablePlots = 0
-MapModData.costHelpForTech = ""
+--MapModData.validForestJunglePlots = 0
+--MapModData.originalForestJunglePlots = 0
+MapModData.totalLivingTerrainPlots = 0
+--MapModData.ownablePlots = 0
+MapModData.techCostHelp = ""
 --Unit Panel UI
 MapModData.bShow = false
 MapModData.bAllow = false
@@ -309,7 +330,6 @@ MapModData.integer = 0
 MapModData.bAutoplay = false
 MapModData.bBypassOnCanCreateTradeRoute = false
 MapModData.bReverseOnCanCreateTradeRoute = false
-MapModData.bBypassOnCanSaveUnit = false
 MapModData.forcedUnitSelection = -1
 MapModData.forcedInterfaceMode = -1
 

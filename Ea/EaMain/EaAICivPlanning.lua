@@ -5,14 +5,13 @@
 
 print("Loading EaAICivPlanning.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
-
 
 --------------------------------------------------------------
 -- Settings
 --------------------------------------------------------------
-local CONTINGENCY_THRESHOLD = 40				--Lower makes it easier to add contingency plan
-local CONTINGENCY_TURN_INTERVAL = 5
+local CONTINGENCY_THRESHOLD = EaSettings.CONTINGENCY_THRESHOLD		--Lower makes it easier to add contingency plan
+local CONTINGENCY_TURN_INTERVAL = EaSettings.CONTINGENCY_TURN_INTERVAL
+local EXPECTED_CL_CHANGE = EaSettings.CL_TARGET_CHANGE				--Good expectation at game start
 
 --------------------------------------------------------------
 -- File Locals
@@ -30,6 +29,7 @@ local FEATURE_FOREST = 				GameInfoTypes.FEATURE_FOREST
 local FEATURE_JUNGLE = 				GameInfoTypes.FEATURE_JUNGLE
 local FEATURE_MARSH =	 			GameInfoTypes.FEATURE_MARSH
 local FEATURE_SOLOMONS_MINES =	 	GameInfoTypes.FEATURE_SOLOMONS_MINES
+local FEATURE_EL_DORADO =	 		GameInfoTypes.FEATURE_EL_DORADO
 
 local POLICY_DOMINIONISM =			GameInfoTypes.POLICY_DOMINIONISM
 local POLICY_PANTHEISM =			GameInfoTypes.POLICY_PANTHEISM
@@ -187,9 +187,9 @@ CachePolicyPrereqsRecursionByType = nil
 for policyBranchInfo in GameInfo.PolicyBranchTypes() do		--finishers have prereqs too so they can be used to tell AI to finish a branch
 	local finisher = policyBranchInfo.FreeFinishingPolicy
 	if finisher then
-		finisherID = GameInfoTypes[finisher]
-		branchType = policyBranchInfo.Type
-		openerID = GameInfoTypes[policyBranchInfo.FreePolicy]
+		local finisherID = GameInfoTypes[finisher]
+		local branchType = policyBranchInfo.Type
+		local openerID = GameInfoTypes[policyBranchInfo.FreePolicy]
 		local prereqs = {}
 		count = 1
 		prereqs[1] = openerID
@@ -221,8 +221,8 @@ end
 
 local excludedPolicyBranchesByBranchID = {}
 for row in GameInfo.PolicyBranch_Disables() do
-	b1 = GameInfoTypes[row.PolicyBranchType]
-	b2 = GameInfoTypes[row.PolicyBranchDisable]
+	local b1 = GameInfoTypes[row.PolicyBranchType]
+	local b2 = GameInfoTypes[row.PolicyBranchDisable]
 	excludedPolicyBranchesByBranchID[b1] = excludedPolicyBranchesByBranchID[b1] or {}
 	local index = #excludedPolicyBranchesByBranchID[b1] + 1
 	excludedPolicyBranchesByBranchID[b1][index] = b2
@@ -267,7 +267,9 @@ for techInfo in GameInfo.Technologies() do
 end
 CacheTechPrereqsRecursionByType = nil
 
-local unholyPlans = {[GameInfoTypes.EACIVPLAN_UNHOLY_CONTINGENT] = true, [GameInfoTypes.EACIVPLAN_UNHOLY] = true, [GameInfoTypes.EACIVPLAN_STYGIA] = true}
+local unholyPlans = {	[GameInfoTypes.EACIVPLAN_UNHOLY_CONTINGENT] = true,
+						[GameInfoTypes.EACIVPLAN_UNHOLY] = true,
+						[GameInfoTypes.EACIVPLAN_DESTROYER] = true}
 local holyPlans = {}
 
 local policiesByPlan = {}
@@ -568,7 +570,8 @@ function AIPickPolicy(iPlayer)	--called from EaPolicies.lua
 	local planSetNum, planNum = 1, 1
 	local planSet = planSets[1]
 	local plans = eaPlayer[planSet]
-	local planID = plans[1]	
+	local planID = plans[1]
+	local bGeneric = false
 
 	while true do
 		if planID then
@@ -658,9 +661,16 @@ function AIPickPolicy(iPlayer)	--called from EaPolicies.lua
 					plans = eaPlayer[planSet]
 					planNum = 1
 					planID = plans[1]
-				else 
-					planID = EACIVPLAN_GENERIC
-					print("!!!! WARNING: AI resorting to generic plan for policies !!!!")
+				else
+					if bGeneric then
+						print("!!!! ERROR: AI could not find any more policies to take !!!!")
+						player:ChangeNumFreePolicies(-1)
+						return
+					else
+						print("!!!! WARNING: AI resorting to generic plan for policies !!!!")
+						bGeneric = true
+						planID = EACIVPLAN_GENERIC
+					end
 				end
 			end
 		end
@@ -680,7 +690,7 @@ function AICivRun(iPlayer)		--called per turn and re-called if free tech or plan
 	-- It should handle the case where a human player becomes an AI in the middle of a game.
 	--------------------------------------------------------------
 
-	if eaPlayer.aiStage == nil then					--Init as AI civ if city founded
+	if not eaPlayer.aiStage then					--Init as AI civ if city founded
 		if not player:IsFoundedFirstCity() then return end
 		for i = 1, numPlanSets do
 			eaPlayer[planSets[i]] = {}	--planSets = {"aiStartPlans", "aiNamingPlans", "aiContingency1Plans", "aiFocusPlans", "aiContingency1Plans"}
@@ -739,7 +749,7 @@ function AICivRun(iPlayer)		--called per turn and re-called if free tech or plan
 	--------------------------------------------------------------
 	if eaPlayer.aiStage == "AchievedName" then			--Achieved name; check for new Start plans and add focus plan
 		print("AI stage: AchievedName")
-		eaPlayer.aiSeekingName = nil
+		eaPlayer.aiSeekingName = false
 		RemoveAllPlans(iPlayer)		--removes all
 		SetPlansForStart(iPlayer)	--may not have finished above, or a different start may be needed due to ag/pan switch
 		AddFocusPlan(iPlayer)
@@ -830,7 +840,7 @@ local newPlans = {}		--build up this table, then sort, then replace old plans if
 TestSetContingencyPlans = function(iPlayer)
 	--Contingency1 means better than CONTINGENCY_THRESHOLD
 	--Contingency2 means <= CONTINGENCY_THRESHOLD; used only if we are desperate for plan
-	print("Running TestSetContingencyPlans ", iPlayer, bContingency2)
+	print("Running TestSetContingencyPlans ", iPlayer)
 	local eaPlayer = gPlayers[iPlayer]
 	local cont1Plans = eaPlayer.aiContingency1Plans
 	local numCont1 = #cont1Plans
@@ -881,7 +891,7 @@ TestSetContingencyPlans = function(iPlayer)
 	local plotSpecialScores = bPantheistic and panContingencyScoreByPlotSpecialPlan or agContingencyScoreByPlotSpecialPlan
 	for plotSpecial, number in pairs(eaPlayer.plotSpecialsInBorders) do
 		if 0 < number then
-			local scores = plotSpecialScores[resourceID]
+			local scores = plotSpecialScores[plotSpecial]
 			if scores then
 				for planID, score in pairs(scores) do
 					planScores[planID] = (planScores[planID] or 0) + score * number
@@ -1038,7 +1048,7 @@ GetResearchNeededForTechList = function(teamTechs, techList)
 	--computes combined costs considering existing research and prereq redendancy (OK if techList has redundancy)
 	--accumulate tech and all prereqs in int1 table
 
-	--Dprint("GetResearchNeededForTechList ", teamTechs, techList)
+	--print("GetResearchNeededForTechList ", teamTechs, techList)
 	local numTechs = 1
 	int1[1] = techList[1]		--1st tech and its prereqs can be added without worry of redundancy
 	local prereqs = techPrereqs[techList[1] ]
@@ -1144,7 +1154,7 @@ IsFinishedPlanTechsPolicies = function(iPlayer, planID)
 	if techs then
 		for i = 1, #techs do
 			local techID = techs[i]
-			if not team:IsHasTech(techID) then
+			if not team:IsHasTech(techID) then		--use also CanEverResearch
 				return false
 			end
 		end
@@ -1441,6 +1451,8 @@ PickBestAvailableNamingPlan = function(iPlayer)
 			if featureID ~= FEATURE_ICE then plotSpecial = "Sea" end
 		elseif featureID == FEATURE_SOLOMONS_MINES then
 			plotSpecial = "Evil"
+		elseif featureID == FEATURE_EL_DORADO then
+			plotSpecial = "Azzandara"
 		elseif plotTypeID == PLOT_MOUNTAIN then
 			plotSpecial = "Mountain"
 		elseif featureID == FEATURE_MARSH then
@@ -1576,13 +1588,7 @@ PickBestAvailableNamingPlan = function(iPlayer)
 					local policyID = GameInfoTypes[traitInfo.AdoptedPolicy]
 					local policy2ID = traitInfo.AndAdoptedPolicy and GameInfoTypes[traitInfo.AndAdoptedPolicy] or nil
 					local cultureLevelNeeded = GetCultureLevelNeededForPolicyList(iPlayer, {policyID, policy2ID})
-					local cultureChange = eaPlayer.culturalLevelChange or 0.02	--may be nil at game start
-					if cultureChange < 0.0001 then
-						cultureChange = 0.0001
-					elseif cultureChange > 0.4 then	--don't beleive it; probably just popped a culture goody
-						cultureChange = 0.05
-					end
-					turnsForPolicy = cultureLevelNeeded / cultureChange
+					turnsForPolicy = cultureLevelNeeded / EXPECTED_CL_CHANGE
 				end
 				print("  ...estimated turns for policy(s):", turnsForPolicy)
 

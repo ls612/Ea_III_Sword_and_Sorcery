@@ -5,7 +5,6 @@
 
 print("Loading EaCivs.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- File Locals
@@ -42,6 +41,7 @@ local playerType = MapModData.playerType
 --functions
 local floor = math.floor
 local Rand = Map.Rand
+local HandleError21 = HandleError21
 
 --localized tables
 local Players =		Players
@@ -140,9 +140,9 @@ function EaCivsInit(bNewGame)
 			local race = eaPlayer.race
 			local plot = player:GetStartingPlot()
 			local unitTypeID = GameInfoTypes.UNIT_WARRIORS_MAN
-			if race == EARACE_SIDHE then
+			if race == GameInfoTypes.EARACE_SIDHE then
 				unitTypeID = GameInfoTypes.UNIT_WARRIORS_SIDHE
-			elseif race == EARACE_HELDEOFOL then
+			elseif race == GameInfoTypes.EARACE_HELDEOFOL then
 				unitTypeID = GameInfoTypes.UNIT_WARRIORS_ORC
 			end
 			player:InitUnit(unitTypeID, plot:GetX(), plot:GetY())
@@ -161,7 +161,6 @@ function EaCivsInit(bNewGame)
 
 				for unit in player:Units() do
 					print("Killing hidden civ unit / x / y: ", unit, unit:GetX(), unit:GetY())
-					MapModData.bBypassOnCanSaveUnit = true
 					unit:Kill(true, -1)
 				end
 
@@ -270,8 +269,13 @@ end
 -- Interface
 --------------------------------------------------------------
 
-function DeadPlayer(iPlayer)
-	print("DeadPlayer ", iPlayer)
+function DeadPlayer(iPlayer, iConqueringPlayer)		--runs when killed (from last city conquered) and at game init (last arg nil)
+	print("DeadPlayer ", iPlayer, iConqueringPlayer)
+
+	if iConqueringPlayer and gPlayers[iPlayer].bIsFallen then
+		StripCreditMaleficium(iPlayer, iConqueringPlayer, false)	--will trigger a protector victory check
+	end
+
 	realCivs[iPlayer] = nil
 	fullCivs[iPlayer] = nil
 	cityStates[iPlayer] = nil
@@ -279,8 +283,17 @@ end
 
 function ResurectedPlayer(iPlayer)
 	realCivs[iPlayer] = gPlayers[iPlayer]
-	if iOwner < MAX_MAJOR_CIVS then
+	if iPlayer < MAX_MAJOR_CIVS then
 		fullCivs[iPlayer] = gPlayers[iPlayer]
+
+		--was a Fallen civ resurected? If so, someone has to pay back credit earned
+		if gPlayers[iPlayer].bIsFallen then
+			for iLoopPlayer, eaLoopPlayer in pairs(fullCivs) do
+				if eaLoopPlayer.civsCorrectedProvisional and eaLoopPlayer.civsCorrectedProvisional[iPlayer] then
+					eaLoopPlayer.civsCorrectedProvisional[iPlayer] = nil	--take away provisional credit
+				end
+			end
+		end
 	else
 		cityStates[iPlayer] = gPlayers[iPlayer]
 	end
@@ -305,7 +318,7 @@ function CityStatePerCivTurn(iPlayer)	-- called for true city states only
 				local atheists = city:GetNumFollowers(-1)
 				if 0 < atheists then
 					print("Converting 1 citizen in Holy City State")
-					local convertPercent = floor(100 / atheists + 1)
+					local convertPercent = floor(100 / atheists + 0.9)
 					city:ConvertPercentFollowers(RELIGION_AZZANDARAYASNA, -1, convertPercent)
 				end
 			end
@@ -417,7 +430,7 @@ function FullCivPerCivTurn(iPlayer)		-- called for full civs only
 	local faithFromPolicyFinisher = GetFaithFromPolicyFinisher(player)
 	local cultureManaFromWildlands = eaPlayer.cultureManaFromWildlands or 0
 
-	local cultFounderMana = eaPlayer.manaForCultOfLeavesFounder or 0	--calculated in EaPlots.lua
+	local cultFounderMana = eaPlayer.manaForCultOfLeavesFounder	--calculated in EaPlots.lua
 	cultFounderMana = cultFounderMana + (eaPlayer.manaForCultOfCahraFounder or 0)
 
 	if gReligions[RELIGION_CULT_OF_ABZU] and iPlayer == gReligions[RELIGION_CULT_OF_ABZU].founder then
@@ -556,30 +569,32 @@ local function OnPlayerMinorFriendshipAnchor(iMajorPlayer, iMinorPlayer)
 		end
 	end
 end
-GameEvents.PlayerMinorFriendshipAnchor.Add(OnPlayerMinorFriendshipAnchor)
+local function X_OnPlayerMinorFriendshipAnchor(iMajorPlayer, iMinorPlayer) return HandleError21(OnPlayerMinorFriendshipAnchor, iMajorPlayer, iMinorPlayer) end
+GameEvents.PlayerMinorFriendshipAnchor.Add(X_OnPlayerMinorFriendshipAnchor)
 
 local function OnPlayerMinorFriendshipDecayMod(iMajorPlayer, iMinorPlayer)
 	--print("OnPlayerMinorFriendshipDecayMod ", iMajorPlayer, iMinorPlayer)
 	if cityStates[iMinorPlayer] then	--City States
 		if gg_bHasPatronage[iMajorPlayer] then
-			return -50
+			return -25			-- x2 in dll?
 		end
 		return 0
 	else	-- God
 		local templeWonderID = godTempleID[iMinorPlayer]
 		if templeWonderID and gWonders[templeWonderID] and gWonders[templeWonderID].iPlayer == iMajorPlayer then
-			return -33
+			return -16			-- x2 in dll?
 		end
 		return 0
 	end
 end
-GameEvents.PlayerMinorFriendshipDecayMod.Add(OnPlayerMinorFriendshipDecayMod)
+local function X_OnPlayerMinorFriendshipDecayMod(iMajorPlayer, iMinorPlayer) return HandleError21(OnPlayerMinorFriendshipDecayMod, iMajorPlayer, iMinorPlayer) end
+GameEvents.PlayerMinorFriendshipDecayMod.Add(X_OnPlayerMinorFriendshipDecayMod)
 
 local function OnPlayerMinorFriendshipRecoveryMod(iMajorPlayer, iMinorPlayer)
 	--print("OnPlayerMinorFriendshipRecoveryMod ", iMajorPlayer, iMinorPlayer)
 	if cityStates[iMinorPlayer] then	--City States
 		if gg_bHasPatronage[iMajorPlayer] then
-			return 50
+			return 25			-- x2 in dll?
 		else
 			return 0
 		end
@@ -587,7 +602,8 @@ local function OnPlayerMinorFriendshipRecoveryMod(iMajorPlayer, iMinorPlayer)
 		return 0
 	end
 end
-GameEvents.PlayerMinorFriendshipRecoveryMod.Add(OnPlayerMinorFriendshipRecoveryMod)
+local function X_OnPlayerMinorFriendshipRecoveryMod(iMajorPlayer, iMinorPlayer) return HandleError21(OnPlayerMinorFriendshipRecoveryMod, iMajorPlayer, iMinorPlayer) end
+GameEvents.PlayerMinorFriendshipRecoveryMod.Add(X_OnPlayerMinorFriendshipRecoveryMod)
 
 function CheckCapitalBuildings(iPlayer)
 	local eaPlayer = gPlayers[iPlayer]
@@ -710,8 +726,6 @@ end
 
 local function TeemMeetListener(iActiveTeam, iMetTeam)	--player or team?
 	print("TeemMeetListener: ", iActiveTeam, iMetTeam)	--returning true did not prevent meeting (contrary to wiki)
-	
-
 end
 GameEvents.TeamMeet.Add(TeemMeetListener)
 
@@ -734,21 +748,23 @@ local function OnCanMeetTeam(iTeam1, iTeam2)
 end
 GameEvents.CanMeetTeam.Add(OnCanMeetTeam)
 
-local function WarStateChangedHandler(iTeam1, iTeam2, bWar)
+local function OnWarStateChanged(iTeam1, iTeam2, bWar)		--works even if active player hasn't met either teem (timing?)
 	--just testing for now
-	print("WarStateChangedHandler", iTeam1, iTeam2, bWar)
-	local iActiveTeam = Game.GetActiveTeam()
-	if iTeam1 ~= iActiveTeam and iTeam2 ~= iActiveTeam then
-		print("Neither team was the active team!")
-		local activeTeam = Teams[iActiveTeam]
-		if not activeTeam:IsHasMet(iTeam1) and not activeTeam:IsHasMet(iTeam1) then
-			print("Neither team has met the active team!")
+	print("OnWarStateChanged", iTeam1, iTeam2, bWar)
+	for iPlayer1 = 0, BARB_PLAYER_INDEX do
+		if Players[iPlayer1]:GetTeam() == iTeam1 then
+			local eaPlayer1 = gPlayers[iPlayer1]
+			for iPlayer2 = 0, BARB_PLAYER_INDEX do
+				if Players[iPlayer2]:GetTeam() == iTeam2 then
+					local eaPlayer2 = gPlayers[iPlayer2]
+					eaPlayer1.atWarWith[iPlayer2] = bWar
+					eaPlayer2.atWarWith[iPlayer1] = bWar	--TO DO: remove if this event fires reciprocally
+				end
+			end
 		end
 	end
-
-	--EaTradeDataDirty()
 end
-Events.WarStateChanged.Add(WarStateChangedHandler)
+Events.WarStateChanged.Add(OnWarStateChanged)
 
 
 

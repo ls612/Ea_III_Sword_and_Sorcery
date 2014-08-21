@@ -4,7 +4,6 @@
 --------------------------------------------------------------
 print("Loading EaMagic.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- File Locals
@@ -41,6 +40,7 @@ local Vector2 =				Vector2
 local ToHexFromGrid =		ToHexFromGrid
 local HandleError21 =		HandleError21
 local HandleError31 =		HandleError31
+local HandleError81 =		HandleError81
 
 local gg_eaSpecial =		gg_eaSpecial
 
@@ -150,9 +150,9 @@ function UseManaOrDivineFavor(iPlayer, iPerson, pts, bNoDrain, consumedFloatUpPl
 		end
 	end
 
-	if eaPlayer.bIsFallen or iPlayer == BARB_PLAYER_INDEX then
+	if (eaPlayer.bIsFallen or iPlayer == BARB_PLAYER_INDEX) and gWorld.evilControl ~= "Sealed" then
 		gWorld.sumOfAllMana = gWorld.sumOfAllMana - pts
-		eaPlayer.manaConsumed = (eaPlayer.manaConsumed or 0) + pts
+		eaPlayer.manaConsumed = eaPlayer.manaConsumed + pts
 		if not consumedFloatUpPlot then
 			local capital = player:GetCapitalCity()
 			if capital then
@@ -313,7 +313,9 @@ function UpdatePlotEffectHighlight(iPlot, newShowState, bForceFullUpdate)	--all 
 		end
 	end
 end
-LuaEvents.EaMagicUpdatePlotEffectHighlight.Add(function(iPlot, newShowState, bForceFullUpdate) return HandleError31(UpdatePlotEffectHighlight, iPlot, newShowState, bForceFullUpdate) end)
+local UpdatePlotEffectHighlight = UpdatePlotEffectHighlight
+local function X_UpdatePlotEffectHighlight(iPlot, newShowState, bForceFullUpdate) return HandleError31(UpdatePlotEffectHighlight, iPlot, newShowState, bForceFullUpdate) end
+LuaEvents.EaMagicUpdatePlotEffectHighlight.Add(X_UpdatePlotEffectHighlight)
 
 --------------------------------------------------------------
 -- GameEvents
@@ -326,7 +328,8 @@ local function OnUnitSetXYPlotEffect(iPlayer, iUnit, x, y, plotEffectID, plotEff
 		OnPlotEffect[plotEffectID](iPlayer, iUnit, x, y, plotEffectStrength, iPlotEffectPlayer, iPlotEffectCaster)
 	end
 end
-GameEvents.UnitSetXYPlotEffect.Add(function(iPlayer, iUnit, x, y, plotEffectID, plotEffectStrength, iPlotEffectPlayer, iPlotEffectCaster) return HandleError(OnUnitSetXYPlotEffect, iPlayer, iUnit, x, y, plotEffectID, plotEffectStrength, iPlotEffectPlayer, iPlotEffectCaster) end)
+local function X_OnUnitSetXYPlotEffect(iPlayer, iUnit, x, y, plotEffectID, plotEffectStrength, iPlotEffectPlayer, iPlotEffectCaster) return HandleError81(OnUnitSetXYPlotEffect, iPlayer, iUnit, x, y, plotEffectID, plotEffectStrength, iPlotEffectPlayer, iPlotEffectCaster) end
+GameEvents.UnitSetXYPlotEffect.Add(X_OnUnitSetXYPlotEffect)
 
 OnPlotEffect[GameInfoTypes.EA_PLOTEFFECT_EXPLOSIVE_RUNE] = function(iPlayer, iUnit, x, y, plotEffectStrength, iPlotEffectPlayer, iPlotEffectCaster)
 	local plotEffectPlayer = Players[iPlotEffectPlayer]
@@ -344,7 +347,7 @@ OnPlotEffect[GameInfoTypes.EA_PLOTEFFECT_EXPLOSIVE_RUNE] = function(iPlayer, iUn
 			local afterDamage = unit and unit:GetDamage() or maxHP
 			local damage = afterDamage - beforeDamage
 			print("Damage to unit = ", damage)
-			local xpMana = CalculateXPManaForAttack(unitTypeId, damage, damage == maxHP)
+			local xpMana = CalculateXPManaForAttack(unitTypeID, damage, damage == maxHP)
 			UseManaOrDivineFavor(iPlotEffectPlayer, iPlotEffectCaster, xpMana)	--safe to use if iPlotEffectCaster is dead
 			local iPlot = GetPlotIndexFromXY(x, y) 
 			UpdatePlotEffectHighlight(iPlot)
@@ -385,9 +388,8 @@ OnPlotEffect[GameInfoTypes.EA_PLOTEFFECT_DEATH_RUNE] = function(iPlayer, iUnit, 
 				--xp/mana should be the greater of threashold or the standard attack pts
 				local hp = unit:GetMaxHitPoints() - beforeDamage
 				local unitTypeID = unit:GetUnitType()
-				MapModData.bBypassOnCanSaveUnit = true
 				unit:Kill(true, iPlotEffectPlayer)
-				local stdPts = CalculateXPManaForAttack(unitTypeId, hp, true)
+				local stdPts = CalculateXPManaForAttack(unitTypeID, hp, true)
 				local xpMana = threshold < stdPts and stdPts or threshold
 				print("Death Rune killed the unit; xp/mana = ", xpMana)
 				UseManaOrDivineFavor(iPlotEffectPlayer, iPlotEffectCaster, xpMana)	--safe to use if iPlotEffectCaster is dead

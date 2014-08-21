@@ -5,7 +5,6 @@
 
 print("Loading EaYields.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- local defs
@@ -22,7 +21,7 @@ local ORDER_TRAIN =								OrderTypes.ORDER_TRAIN
 local CITY_UPDATE_TYPE_PRODUCTION =				CityUpdateTypes.CITY_UPDATE_TYPE_PRODUCTION
 
 local EA_ACTION_BUILD =							GameInfoTypes.EA_ACTION_BUILD
-local EA_ACTION_RECRUIT =							GameInfoTypes.EA_ACTION_RECRUIT
+local EA_ACTION_RECRUIT =						GameInfoTypes.EA_ACTION_RECRUIT
 
 local PROCESS_INDUSTRIAL_AGRICULTURE =			GameInfoTypes.PROCESS_INDUSTRIAL_AGRICULTURE
 local PROCESS_AZZANDARAS_TRIBUTE =				GameInfoTypes.PROCESS_AZZANDARAS_TRIBUTE
@@ -35,7 +34,6 @@ local POLICY_DOMINIONISM_FINISHER =				GameInfoTypes.POLICY_DOMINIONISM_FINISHER
 local POLICY_SLAVE_CASTES =						GameInfoTypes.POLICY_SLAVE_CASTES
 local POLICY_SLAVERY_FINISHER =					GameInfoTypes.POLICY_SLAVERY_FINISHER
 local POLICY_COMMERCE_FINISHER =				GameInfoTypes.POLICY_COMMERCE_FINISHER
-local POLICY_THE_ARTS =							GameInfoTypes.POLICY_THE_ARTS
 local POLICY_TRADITION_FINISHER =				GameInfoTypes.POLICY_TRADITION_FINISHER
 local POLICY_MERCENARIES =						GameInfoTypes.POLICY_MERCENARIES
 
@@ -44,14 +42,6 @@ local RELIGION_AZZANDARAYASNA =					GameInfoTypes.RELIGION_AZZANDARAYASNA
 local RELIGION_ANRA =							GameInfoTypes.RELIGION_ANRA
 local RELIGION_CULT_OF_BAKKHEIA =				GameInfoTypes.RELIGION_CULT_OF_BAKKHEIA
 
-
-
-
-local BUILDING_SMOKEHOUSE = 					GameInfoTypes.BUILDING_SMOKEHOUSE
-local BUILDING_HUNTING_LODGE = 					GameInfoTypes.BUILDING_HUNTING_LODGE
-local BUILDING_HARBOR = 						GameInfoTypes.BUILDING_HARBOR
-local BUILDING_PORT = 							GameInfoTypes.BUILDING_PORT
-local BUILDING_WHALERY = 						GameInfoTypes.BUILDING_WHALERY
 local BUILDING_SLAVE_BREEDING_PEN =				GameInfoTypes.BUILDING_SLAVE_BREEDING_PEN
 local BUILDING_NATIONAL_TREASURY =				GameInfoTypes.BUILDING_NATIONAL_TREASURY
 local BUILDING_HANGING_GARDENS_MOD =			GameInfoTypes.BUILDING_HANGING_GARDENS_MOD
@@ -74,7 +64,6 @@ local BUILDING_PLUS_1_SEA_XP =					GameInfoTypes.BUILDING_PLUS_1_SEA_XP
 
 
 local BUILDING_TRADE_HOUSE =					GameInfoTypes.BUILDING_TRADE_HOUSE
-local BUILDING_MEGALOS_FAROS_MOD =				GameInfoTypes.BUILDING_MEGALOS_FAROS_MOD
 
 local EA_ARTIFACT_TOME_OF_TOMES =				GameInfoTypes.EA_ARTIFACT_TOME_OF_TOMES
 
@@ -92,6 +81,9 @@ local YIELD_SCIENCE =							GameInfoTypes.YIELD_SCIENCE
 local YIELD_CULTURE = 							GameInfoTypes.YIELD_CULTURE
 local YIELD_FAITH = 							GameInfoTypes.YIELD_FAITH
 
+local VERY_UNHAPPY_THRESHOLD =					GameDefines.VERY_UNHAPPY_THRESHOLD
+local VERY_UNHAPPY_THRESHOLD =					GameDefines.VERY_UNHAPPY_GROWTH_PENALTY
+local VERY_UNHAPPY_THRESHOLD =					GameDefines.UNHAPPY_GROWTH_PENALTY
 
 local UNHAPPINESS_PER_OCCUPIED_POPULATION =		GameDefines.UNHAPPINESS_PER_OCCUPIED_POPULATION
 local UNHAPPINESS_PER_CAPTURED_CITY =			GameDefines.UNHAPPINESS_PER_CAPTURED_CITY
@@ -102,10 +94,13 @@ local playerType =	MapModData.playerType
 local realCivs =	MapModData.realCivs
 
 local gg_regularCombatType = gg_regularCombatType
+local gg_eaTechClass = gg_eaTechClass
 
 --localized functions
 local GetPlotByIndex = Map.GetPlotByIndex
 local floor = math.floor
+local HandleError31 = HandleError31
+local HandleError41 = HandleError41
 
 --file control
 local g_iActivePlayer = Game.GetActivePlayer()
@@ -227,7 +222,7 @@ function UpdateGlobalYields(iPlayer, effectType, bPerTurnCall)	--City States onl
 			MapModData.mercenaryNet = mercenaryIncome - mercenaryCost
 		end
 		if bPerTurnCall then	--do deduction from teasury and/or set shortfall
-			player:ChangeGold(mercenaryNet)
+			player:ChangeGold(mercenaryIncome - mercenaryCost)
 		end
 	end
 
@@ -246,9 +241,6 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 	end
 	local bPerTurnFullCivUpdate = bFullCiv and bPerTurnCall
 	local numCities = player:GetNumCities()
-
-	local bHasMegalosFaros = gWonders[EA_WONDER_MEGALOS_FAROS] and Map.GetPlotByIndex(gWonders[EA_WONDER_MEGALOS_FAROS].iPlot):GetOwner() == iPlayer
-	local megalosFarosMod = bHasMegalosFaros and gWonders[EA_WONDER_MEGALOS_FAROS].mod or 0
 	local nameTrait = bFullCiv and eaPlayer.eaCivNameID
 	local capital = player:GetCapitalCity()
 
@@ -261,44 +253,66 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 	local faithDistribution = 0
 
 	if bFullCiv then
-		if player:HasPolicy(POLICY_INDUSTRIALIZATION) then
-			local food = eaPlayer.foodDistributionCarryover or 0
-			for city in player:Cities() do
-				local orderType, orderID = city:GetOrderFromQueue(0)
-				if orderType == ORDER_MAINTAIN and orderID == PROCESS_INDUSTRIAL_AGRICULTURE then	
-					food = food + city:GetYieldRate(YIELD_PRODUCTION) / 4
+		if effectType == nil or effectType == "Food" then
+			if player:HasPolicy(POLICY_INDUSTRIALIZATION) then
+				local food = eaPlayer.foodDistributionCarryover
+				for city in player:Cities() do
+					local orderType, orderID = city:GetOrderFromQueue(0)
+					if orderType == ORDER_MAINTAIN and orderID == PROCESS_INDUSTRIAL_AGRICULTURE then	
+						food = food + city:GetYieldRate(YIELD_PRODUCTION) / 4
+					end
+				end
+				if player:HasPolicy(POLICY_DOMINIONISM_FINISHER) then
+					food = food + player:GetTotalJONSCulturePerTurn() / 3
+				end		
+				foodDistribution = floor(food / numCities)
+				if bPerTurnCall then										--no change if this is just a UI update
+					eaPlayer.foodDistributionCarryover = food % numCities
 				end
 			end
-			if player:HasPolicy(POLICY_DOMINIONISM_FINISHER) then
-				food = food + player:GetTotalJONSCulturePerTurn() / 3
-			end		
-			foodDistribution = floor(food / numCities)
-			if bPerTurnCall then										--no change if this is just a UI update
-				eaPlayer.foodDistributionCarryover = food % numCities
+		end
+
+		if effectType == nil or effectType == "Production" then
+			if player:HasPolicy(POLICY_SLAVE_CASTES) then
+				local unhappiness = -player:GetExcessHappiness()
+				unhappiness = unhappiness < 0 and 0 or unhappiness
+				local production = eaPlayer.productionDistributionCarryover + unhappiness
+				if player:HasPolicy(POLICY_SLAVERY_FINISHER) then
+					production = production + floor(player:GetTotalJONSCulturePerTurn() / 3)
+				end
+				productionDistribution = floor(production / numCities)
+				eaPlayer.productionDistributionCarryover = bPerTurnCall and production % numCities or eaPlayer.productionDistributionCarryover	--dump remainder into unhappiness account even if it is from culture
 			end
 		end
 
-		if player:HasPolicy(POLICY_SLAVE_CASTES) then
-			local unhappiness = -player:GetExcessHappiness()
-			unhappiness = unhappiness < 0 and 0 or unhappiness
-			local production = (eaPlayer.productionDistributionCarryover or 0) + unhappiness
-			if player:HasPolicy(POLICY_SLAVERY_FINISHER) then
-				production = production + floor(player:GetTotalJONSCulturePerTurn() / 3)
+		if effectType == nil or effectType == "Science" then
+			local science = eaPlayer.scienceDistributionCarryover
+			if player:HasPolicy(POLICY_TRADITION_FINISHER) then
+				science = science + floor(player:GetTotalJONSCulturePerTurn() / 3)
 			end
-			productionDistribution = floor(production / numCities)
-			eaPlayer.productionDistributionCarryover = bPerTurnCall and production % numCities or eaPlayer.productionDistributionCarryover	--dump remainder into unhappiness account even if it is from culture
+			if science ~= 0 then
+				scienceDistribution = floor(science / numCities)
+				eaPlayer.scienceDistributionCarryover = bPerTurnCall and science % numCities or eaPlayer.scienceDistributionCarryover	--no change if this is just a UI update
+			end
 		end
-
-		if player:HasPolicy(POLICY_TRADITION_FINISHER) then
-			local science = (eaPlayer.scienceDistributionCarryover or 0) + floor(player:GetTotalJONSCulturePerTurn() / 3)
-			scienceDistribution = floor(science / numCities)
-			eaPlayer.scienceDistributionCarryover = bPerTurnCall and science % numCities or eaPlayer.scienceDistributionCarryover	--no change if this is just a UI update
+		--[[
+		if effectType == nil or effectType == "Culture" then
+			local culture = eaPlayer.cultureDistributionCarryover
+			if player:HasPolicy(POLICY_TRADITION_FINISHER) then
+				culture = culture + floor(player:GetTotalJONSCulturePerTurn() / 6)
+			end
+			if culture ~= 0 then
+				cultureDistribution = floor(culture / numCities)
+				eaPlayer.cultureDistributionCarryover = bPerTurnCall and culture % numCities or eaPlayer.cultureDistributionCarryover	--no change if this is just a UI update
+			end
 		end
-	
-		if player:HasPolicy(POLICY_COMMERCE_FINISHER) then
-			local gold = (eaPlayer.goldDistributionCarryover or 0) + floor(player:GetTotalJONSCulturePerTurn() / 3)
-			goldDistribution = floor(gold / numCities)
-			eaPlayer.goldDistributionCarryover = bPerTurnCall and gold % numCities or eaPlayer.goldDistributionCarryover	--no change if this is just a UI update
+		]]	
+		if effectType == nil or effectType == "Gold" then
+			if player:HasPolicy(POLICY_COMMERCE_FINISHER) then
+				local gold = eaPlayer.goldDistributionCarryover + floor(player:GetTotalJONSCulturePerTurn() / 3)
+				goldDistribution = floor(gold / numCities)
+				eaPlayer.goldDistributionCarryover = bPerTurnCall and gold % numCities or eaPlayer.goldDistributionCarryover	--no change if this is just a UI update
+			end
 		end
 	end
 
@@ -314,55 +328,8 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 			local population = city:GetPopulation()
 			local followerReligion = city:GetReligiousMajority()
 
-			--[[
-			if effectType == nil or effectType == "CityStateUpdate" or effectType == "RemoteResources" then
-				local remotePlots = eaCity.remotePlots
-				local numCampRes, numFishingRes, numWhales = 0, 0, 0
-				for i = 1, #remotePlots do
-					local iRemotePlot = remotePlots[i]
-					local remotePlot = GetPlotByIndex(iRemotePlot)
-					local improvementID = remotePlot:GetImprovementType()
-					if improvementID == IMPROVEMENT_CAMP then
-						numCampRes = numCampRes + 1
-					elseif improvementID == IMPROVEMENT_FISHING_BOATS then
-						numFishingRes = numFishingRes + 1
-					elseif improvementID == IMPROVEMENT_WHALING_BOATS then
-						numWhales = numWhales + 1
-					end
-				end
-				local food, production, gold = 0, 0, 0
-				if 0 < city:GetNumBuilding(BUILDING_SMOKEHOUSE) then
-					food = food + numCampRes
-				end
-				if 0 < city:GetNumBuilding(BUILDING_HUNTING_LODGE) then
-					food = food + numCampRes
-					gold = gold + numCampRes
-				end
-				if 0 < city:GetNumBuilding(BUILDING_HARBOR) then
-					food = food + numFishingRes + numWhales
-				end
-				if 0 < city:GetNumBuilding(BUILDING_PORT) then
-					food = food + numFishingRes + numWhales
-					gold = gold + numFishingRes + numWhales
-				end
-				if 0 < city:GetNumBuilding(BUILDING_WHALERY) then
-					food = food + numWhales
-					production = production + numWhales		
-				end
-				city:SetNumRealBuilding(BUILDING_REMOTE_RES_1_FOOD, food)
-				city:SetNumRealBuilding(BUILDING_REMOTE_RES_1_PRODUCTION, production)
-				city:SetNumRealBuilding(BUILDING_REMOTE_RES_1_GOLD, gold)
-			end
-
-			if effectType == nil or effectType == "CityStateUpdate" or effectType == "Trade" then
-
-			end
-			]]
-
 			if effectType == nil or effectType == "LandXP" or effectType == "Training" then
-				local residentLandXP = eaCity.residentLandXP or 0
-				local leaderLandXP = eaPlayer.leaderLandXP or 0
-				local xp = residentLandXP + leaderLandXP
+				local xp = eaPlayer.leaderLandXP
 				if eaCity.gpTraining then
 					for iPerson, trainingXP in pairs(eaCity.gpTraining) do
 						xp = xp + trainingXP
@@ -372,10 +339,9 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 				city:SetNumRealBuilding(BUILDING_PLUS_1_LAND_XP, floor(xp + 0.5))
 			end
 
+			--[[
 			if effectType == nil or effectType == "SeaXP" or effectType == "Training" then
-				local residentSeaXP = eaCity.residentSeaXP or 0
-				local leaderSeaXP = eaPlayer.leaderSeaXP or 0
-				local xp = residentSeaXP + leaderSeaXP
+				local xp = eaPlayer.leaderSeaXP
 				if eaCity.gpTraining then
 					for iPerson, trainingXP in pairs(eaCity.gpTraining) do
 						xp = xp + trainingXP
@@ -383,6 +349,7 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 				end
 				city:SetNumRealBuilding(BUILDING_PLUS_1_SEA_XP, floor(xp + 0.5))
 			end
+			]]
 
 			if effectType == nil or effectType == "Food" then
 				local newFood = foodDistribution
@@ -488,7 +455,7 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 						faithFromToAhrimanTribute = faithFromToAhrimanTribute + manaBurn
 						if bPerTurnFullCivUpdate then
 							gWorld.sumOfAllMana = gWorld.sumOfAllMana - manaBurn
-							eaPlayer.manaConsumed = (eaPlayer.manaConsumed or 0) + manaBurn
+							eaPlayer.manaConsumed = eaPlayer.manaConsumed + manaBurn
 						end
 					end
 				end
@@ -551,17 +518,21 @@ function UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall)
 		if not bPerTurnCall then
 			Events.SerialEventCityInfoDirty()	--update city banner if production changed
 		end
-		if not iCity then			--Top Panel info for active player; run only for all-city update (iCity = nil)
+		if not iSpecificCity then			--Top Panel info for active player; run only for all-city update (iCity = nil)
 			MapModData.faithFromGPs = faithFromGPs
 			MapModData.faithFromAzzTribute = faithFromAzzTribute
 			MapModData.faithFromToAhrimanTribute = faithFromToAhrimanTribute
 		end
 	end
 end
+local function X_UpdateCityYields(iPlayer, iSpecificCity, effectType, bPerTurnCall) return HandleError41(UpdateCityYields, iPlayer, iSpecificCity, effectType, bPerTurnCall) end
+LuaEvents.EaYieldsUpdateCityYields.Add(X_UpdateCityYields)
 
 --------------------------------------------------------------
 -- Event functions
 --------------------------------------------------------------
+
+
 local prevOrderType = {}	--index by iCity, use to know if changed
 local prevOrderID = {}
 local function ActivePlayerCityBuildQueueChange(iPlayer, iCity, updateTypeID)
@@ -625,7 +596,8 @@ local function ActivePlayerCityBuildQueueChange(iPlayer, iCity, updateTypeID)
 		end
 	end
 end
-Events.SpecificCityInfoDirty.Add(ActivePlayerCityBuildQueueChange)
+local function X_ActivePlayerCityBuildQueueChange(iPlayer, iCity, updateTypeID) return HandleError31(ActivePlayerCityBuildQueueChange, iPlayer, iCity, updateTypeID) end
+Events.SpecificCityInfoDirty.Add(X_ActivePlayerCityBuildQueueChange)
 
 
 ----------------------------------------------------------------

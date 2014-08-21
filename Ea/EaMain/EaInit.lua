@@ -4,22 +4,38 @@
 --------------------------------------------------------------
 print("Loading EaInit.lua...")
 
+local HandleError10 = HandleError10
+
 local function InitForNewGame()
 
-	--gWorld
-	gWorld.sumOfAllMana =				MapModData.STARTING_SUM_OF_ALL_MANA
+	--gWorld (nils listed for bookkeeping)
+	gWorld.personCount =				0
+	gWorld.sumOfAllMana =				EaSettings.STARTING_SUM_OF_ALL_MANA
 	gWorld.armageddonStage =			0
 	gWorld.armageddonSap =				0
 	gWorld.bAllCivsHaveNames =			false
+	gWorld.bSurfacerDiscoveredDeepMining = false
+	gWorld.evilControl =				"NewGame"	--Ready, Open, Sealed
+	gWorld.bAnraHolyCityExists =		false			--will be true after founding and then false if razed
+	gWorld.bEnableEasyVaultSeal =		false
+	gWorld.bEnableProtectorVC =			false
 	gWorld.returnAsPlayer =				Game.GetActivePlayer()
-	gWorld.encampments =				{}
 	gWorld.azzConvertNum =				0
 	gWorld.anraConvertNum =				0
 	gWorld.weaveConvertNum =			0
 	gWorld.livingTerrainConvertStr =	0
+	gWorld.panCivsEver =				-1		--initing the Fay will increment to 0
+	gWorld.fullCivsEver =				0
+	gWorld.validForestJunglePlots =		0
+	gWorld.originalForestJunglePlots =	0
+	gWorld.ownablePlots =				0
+	gWorld.initialLivingTerrainPlots =	0
+	gWorld.initialLivingTerrainAveStr = 0
+
+	gWorld.bActivePlayerTimeStop =		false
+	gWorld.encampments =				{}
 	gWorld.calledMajorSpirits =			{}
-	gWorld.panCivsEver =				0
-	
+
 	--gRaceDiploMatrix; index by player1 (observer), player2 (subject); these are start values modified through game by city razing
 	for row in GameInfo.EaRaces_InitialHatreds() do
 		local observerRaceID = GameInfoTypes[row.ObserverRace]
@@ -36,7 +52,12 @@ local function InitForNewGame()
 		local player = Players[iPlayer]
 		local eaPlayer = gPlayers[iPlayer]		--player tables added in EaDefines.lua
 		if MapModData.playerType[iPlayer] == "FullCiv" then
-			eaPlayer.eaCivNameID = nil
+			gWorld.fullCivsEver = gWorld.fullCivsEver + 1
+			eaPlayer.eaCivNameID = false
+			eaPlayer.bUsesDivineFavor = false
+			eaPlayer.bIsFallen = false
+			eaPlayer.bRenouncedMaleficium = false	
+			eaPlayer.manaConsumed = 0
 			eaPlayer.ImprovementsByID = {}
 			eaPlayer.ImprovedResourcesByID = {}
 			eaPlayer.resourcesInBorders = {}	--visible only; for AI and possibly traits
@@ -56,11 +77,8 @@ local function InitForNewGame()
 			eaPlayer.culturalLevel = 0
 			eaPlayer.cumCulture = 0
 			eaPlayer.aveCulturePerPop = 0
-			eaPlayer.culturalLevelChange = 0
 			eaPlayer.policyCount = 0
-
-			--eaPlayer.cumPopTurns = 0
-			eaPlayer.techCount = 0
+			eaPlayer.techs = {}
 			eaPlayer.rpFromDiffusion = 0
 			eaPlayer.rpFromConquest = 0
 			eaPlayer.tradeTotals = {}	--index by other iPlayer; holds only base trade so we can calculate Trade Mission value
@@ -70,6 +88,56 @@ local function InitForNewGame()
 			eaPlayer.mercenaries = {}
 			eaPlayer.revealedNWs = {}
 			eaPlayer.revealedPlotEffects = {}	--indexed by iPlot
+			eaPlayer.atWarWith = {[62] = true, [63] = true}
+			eaPlayer.conquests = {}
+
+			eaPlayer.manaForCultOfLeavesFounder = 0
+			eaPlayer.manaForCultOfAbzuFounder = 0
+			eaPlayer.manaForCultOfAegirFounder = 0
+			eaPlayer.manaForCultOfPloutonFounder = 0
+			eaPlayer.manaForCultOfCahraFounder = 0
+			eaPlayer.manaForCultOfEponaFounder = 0
+			eaPlayer.manaForCultOfBakkheiaFounder = 0
+			eaPlayer.cultureManaFromWildlands = 0
+			eaPlayer.leaderLandXP = 0
+			eaPlayer.leaderSeaXP = 0
+			eaPlayer.scienceDistributionCarryover = 0
+			eaPlayer.foodDistributionCarryover = 0
+			eaPlayer.productionDistributionCarryover = 0
+			eaPlayer.goldDistributionCarryover = 0
+			eaPlayer.cultureDistributionCarryover = 0
+			eaPlayer.aiNumTradeRoutesTargeted = 0
+			eaPlayer.savedFaithFromManaDivineFavorSwap = 0
+			eaPlayer.trainingXP = 0
+			eaPlayer.improvablePlots = 5	--any value to avoid /0
+			eaPlayer.improvedPlots = 0
+					
+			eaPlayer.delayedGPclass = false
+			eaPlayer.delayedGPsubclass = false
+			eaPlayer.bHasDiscoveredAhrimansVault = false
+			eaPlayer.livingTerrainStrengthAdded = false
+			eaPlayer.livingTerrainAdded = false
+			eaPlayer.fallenFollowersDestr = false
+			eaPlayer.civsCorrectedProvisional = false
+			eaPlayer.civsCorrected = false
+			eaPlayer.protectorProphsRituals = false
+			eaPlayer.declinedNameID = false
+			eaPlayer.faerieTribute = false
+			eaPlayer.majorSpiritsTribute = false
+			eaPlayer.cityStatePatronage = false
+			eaPlayer.aiSeekingName = false
+			eaPlayer.aiStage = false
+			eaPlayer.aiObsoletedCivPlans = false
+			eaPlayer.aiCompletedCivPlans = false
+			eaPlayer.aiContingency2Plans = false
+			eaPlayer.aiFocusPlans = false
+			eaPlayer.aiContingency1Plans = false
+			eaPlayer.aiNamingPlans = false
+			eaPlayer.aiStartPlans = false
+			eaPlayer.aiWarriorsBlock = false
+			eaPlayer.manaToSealAhrimansVault = false
+			eaPlayer.turnBlockEaCivNamingID = false		
+
 			local civID = player:GetCivilizationType()	 
 			local civRace = GameInfo.Civilizations[civID].EaRace
 			if civRace == "EARACE_SIDHE" then
@@ -84,6 +152,10 @@ local function InitForNewGame()
 				eaPlayer.classPoints = {1, 1, 1, 1, 1, 0, 0}
 			end
 		elseif MapModData.playerType[iPlayer] == "Fay" then
+			eaPlayer.bUsesDivineFavor = false
+			eaPlayer.bIsFallen = false
+			eaPlayer.bRenouncedMaleficium = false
+			eaPlayer.manaConsumed = 0
 			eaPlayer.blockedBuildingsByID = {}
 			eaPlayer.religionID = GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
 			eaPlayer.race = GameInfoTypes.EARACE_FAY
@@ -91,7 +163,13 @@ local function InitForNewGame()
 			eaPlayer.leaderEaPersonIndex = GameInfoTypes.EAPERSON_FAND		-- Queen of the Fay
 			eaPlayer.culturalLevel = 20		--used in Diplo relations
 			eaPlayer.revealedNWs = {}
+			eaPlayer.atWarWith = {[62] = true, [63] = true}
 		elseif MapModData.playerType[iPlayer] == "CityState" then
+			eaPlayer.eaCivNameID = false
+			eaPlayer.bUsesDivineFavor = false
+			eaPlayer.bIsFallen = false
+			eaPlayer.bRenouncedMaleficium = false
+			eaPlayer.manaConsumed = 0		--by Anra followers
 			eaPlayer.ImprovementsByID = {}
 			eaPlayer.ImprovedResourcesByID = {}
 			eaPlayer.resourcesInBorders = {}	--visible only; for AI and possibly traits
@@ -104,18 +182,56 @@ local function InitForNewGame()
 			local minorCivInfo = GameInfo.MinorCivilizations[player:GetMinorCivType()]
 			eaPlayer.race = GameInfoTypes[minorCivInfo.EaRace]
 			eaPlayer.mercenaries = {}
+			eaPlayer.atWarWith = {[62] = true, [63] = true}
 		elseif MapModData.playerType[iPlayer] == "God" then
+			eaPlayer.bUsesDivineFavor = false
+			eaPlayer.bIsFallen = false
+			eaPlayer.bRenouncedMaleficium = false
+			eaPlayer.manaConsumed = 0
 			eaPlayer.blockedBuildingsByID = {}
 			eaPlayer.religionID = GameInfoTypes.RELIGION_THE_WEAVE_OF_EA
+			eaPlayer.atWarWith = {[62] = true, [63] = true}
 		elseif MapModData.playerType[iPlayer] == "Animals" then
+			eaPlayer.bUsesDivineFavor = false
+			eaPlayer.bIsFallen = false
+			eaPlayer.bRenouncedMaleficium = false
+			eaPlayer.manaConsumed = 0
 			eaPlayer.sustainedPromotions = {}
+			eaPlayer.atWarWith = {}
+			for iLoopPlayer, loopPlayerType in pairs(MapModData.playerType) do
+				if loopPlayerType ~= "Animals" and loopPlayerType ~= "Barbs" then
+					eaPlayer.atWarWith[iLoopPlayer] = true
+				end
+			end
 		elseif MapModData.playerType[iPlayer] == "Barbs" then
+			eaPlayer.bUsesDivineFavor = false
+			eaPlayer.bIsFallen = false
+			eaPlayer.bRenouncedMaleficium = false
+			eaPlayer.manaConsumed = 0
 			eaPlayer.sustainedPromotions = {}
+			eaPlayer.atWarWith = {}
+			for iLoopPlayer, loopPlayerType in pairs(MapModData.playerType) do
+				if loopPlayerType ~= "Animals" and loopPlayerType ~= "Barbs" then
+					eaPlayer.atWarWith[iLoopPlayer] = true
+				end
+			end
 		end
 	end
-
 end
 
+local function SetStrictTables()
+	--after all keys are added for new AND loaded game
+	MakeTableStrict(gWorld)
+	for _, eaPlayer in pairs(gPlayers) do
+		MakeTableStrict(eaPlayer)
+	end
+	for _, eaPerson in pairs(gPeople) do
+		MakeTableStrict(eaPerson)			--new people made strict in EaPeople.lua
+	end
+	for _, eaCity in pairs(gCities) do
+		MakeTableStrict(eaCity)				--new cities made strict in EaCities.lua
+	end
+end
 
 function OnLoadEaMain()   --Called from the bottom of EaMain after all included files have been processed
 
@@ -164,17 +280,20 @@ function OnLoadEaMain()   --Called from the bottom of EaMain after all included 
 		print("Initializing for loaded game...")	
 	end
 
+	SetStrictTables()
+
 	--init Lua files
-	TestResyncGPIndexes()
+	ScoreEaCivs(bNewGame)
 	EaEncampmentsInit(bNewGame)
 	EaCivsInit(bNewGame)
 	EaCivNamingInit(bNewGame)
 	EaPoliciesInit(bNewGame)
 	EaTechsInit(bNewGame)
-	EaPlotsInit(bNewGame)		--before cities
+	EaPlotsInit(bNewGame)	
 	EaPeopleInit(bNewGame)
-	EaCityInit(bNewGame)
+	EaCityInit(bNewGame)		--after EaPlotsInit
 	EaYieldsInit(bNewGame)
+	EaAIActionsInit(bNewGame)	--after EaPlotsInit
 	EaAIUnitsInit(bNewGame)
 	EaUnitCombatInit(bNewGame)
 	EaUnitsInit(bNewGame)
@@ -188,6 +307,8 @@ function OnLoadEaMain()   --Called from the bottom of EaMain after all included 
 
 	TableSave(gT, "Ea")		--first run is hardest with DB disk lag, so do it now rather than at first autosave (which can hang the game)
 
+	PrintStrictLuaErrors()
+
 	--This is the last thing to run at file load. Next to run is the function below when player enters the game.
 end
 
@@ -197,15 +318,23 @@ local function OnEnterGame()   --Runs when Begin or Countinue Your Journey press
 	--trim dead players (after file inits in case someone is resurected)
 	for iPlayer in pairs(MapModData.realCivs) do
 		if not Players[iPlayer]:IsAlive() then
-			DeadPlayer(iPlayer)
+			DeadPlayer(iPlayer, nil)
 		end
 	end
 
 	gg_init.bEnteredGame = true
+	MapModData.bEnteredGame = true
+
+	if MapModData.error then			--move later?
+		LuaEvents.EaErrorPopupDoErrorPopup(MapModData.error)		
+	end
+
+
 	print("Debug - end of OnEnterGame")
 
 	--There is a exe autosave right after this, but GameEvents.GameSave is specifically disabled (in dll)
 	--for first save since it causes an intermittent game hang in new games
 end
-Events.LoadScreenClose.Add(OnEnterGame)
+local function X_OnEnterGame() return HandleError10(OnEnterGame) end
+Events.LoadScreenClose.Add(X_OnEnterGame)
 

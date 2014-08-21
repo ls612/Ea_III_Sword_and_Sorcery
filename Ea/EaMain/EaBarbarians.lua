@@ -10,22 +10,22 @@ local Dprint = DEBUG_PRINT and print or function() end
 --------------------------------------------------------------
 -- Settings
 --------------------------------------------------------------
-local TURN_CEILING = 300						--stop increasing barb threat at this turn
-local ENCAMPMENT_HEALING = 10
+local BARB_TURN_CEILING =				EaSettings.BARB_TURN_CEILING					--stop increasing barb threat at this turn
+local ENCAMPMENT_HEALING =				EaSettings.ENCAMPMENT_HEALING
 
 --Roaming land units
-local ROAM_SPAWN_MULTIPLIER = 1.5				--Raise for faster spawning
-local ROAM_TURN_EXPONENT = 1					--Raise to increase spawning as a function of turn number
-local ROAM_DENSITY_FEEDBACK_EXPONENT = 3		--Raise to increase negative feedback from area density
-local ROAM_POWER_FEEDBACK_EXPONENT = 2			--Raise to increase negative feedback from unit power (less ogers compared to goblins)
+local ROAM_SPAWN_MULTIPLIER =			EaSettings.ROAM_SPAWN_MULTIPLIER				--Raise for faster spawning
+local ROAM_TURN_EXPONENT =				EaSettings.ROAM_TURN_EXPONENT				--Raise to increase spawning as a function of turn number
+local ROAM_DENSITY_FEEDBACK_EXPONENT =	EaSettings.ROAM_DENSITY_FEEDBACK_EXPONENT	--Raise to increase negative feedback from area density
+local ROAM_POWER_FEEDBACK_EXPONENT =	EaSettings.ROAM_POWER_FEEDBACK_EXPONENT		--Raise to increase negative feedback from unit power (less ogers compared to goblins)
 
 --Sea units
-local SEA_SPAWN_MULTIPLIER = 1.5
-local SEA_TURN_EXPONENT = 1					
-local SEA_DENSITY_FEEDBACK_EXPONENT = 3	
-local SEA_POWER_FEEDBACK_EXPONENT = 1.4
-local USE_MINIMUM_PIRATE_COVE_NUMBER = 4
-local USE_MAXIMUM_PIRATE_COVE_NUMBER = 10
+local SEA_SPAWN_MULTIPLIER =			EaSettings.SEA_SPAWN_MULTIPLIER
+local SEA_TURN_EXPONENT =				EaSettings.SEA_TURN_EXPONENT					
+local SEA_DENSITY_FEEDBACK_EXPONENT =	EaSettings.SEA_DENSITY_FEEDBACK_EXPONENT	
+local SEA_POWER_FEEDBACK_EXPONENT =		EaSettings.SEA_POWER_FEEDBACK_EXPONENT
+local USE_MINIMUM_PIRATE_COVE_NUMBER =	EaSettings.USE_MINIMUM_PIRATE_COVE_NUMBER
+local USE_MAXIMUM_PIRATE_COVE_NUMBER =	EaSettings.USE_MAXIMUM_PIRATE_COVE_NUMBER
 
 if Game.IsOption(GameOptionTypes.GAMEOPTION_RAGING_BARBARIANS) then
 	ROAM_SPAWN_MULTIPLIER = ROAM_SPAWN_MULTIPLIER * 2
@@ -41,6 +41,8 @@ end
 --------------------------------------------------------------
 -- local defs
 --------------------------------------------------------------
+
+local STARTING_SUM_OF_ALL_MANA =			EaSettings.STARTING_SUM_OF_ALL_MANA
 
 local BARB_PLAYER_INDEX =					BARB_PLAYER_INDEX
 local GAME_SPEED_MULTIPLIER =				GAME_SPEED_MULTIPLIER
@@ -192,8 +194,8 @@ local function AddEncampmentBaseUnit(plot, encampmentID)
 		if g_currentBaseUnit2[encampmentID] and Rand(2, "hello") < 1 then
 			unitTypeID = g_currentBaseUnit2[encampmentID]
 		end
-		print("PazDebug Adding Encampment base unit ", unitTypeID, x, y, encampmentID, GameInfo.EaEncampments[encampmentID].Type, GameInfo.Units[unitTypeID].Type)
 		local x, y = plot:GetXY()
+		print("PazDebug Adding Encampment base unit ", unitTypeID, x, y, encampmentID, GameInfo.EaEncampments[encampmentID].Type, GameInfo.Units[unitTypeID].Type)
 		local unit = barbPlayer:InitUnit(unitTypeID, x, y)
 		if unit then
 			unit:SetScenarioData(encampmentID)
@@ -214,7 +216,6 @@ local function UpdateBaseUnit(encampmentID)			--kill present unit if obsolete an
 					if unitTypeID ~= g_currentBaseUnit1[encampmentID] and unitTypeID ~= g_currentBaseUnit2[encampmentID] then	--check what's here; it might be OK
 						print("Killing current encampment unit before replacement: ", GameInfo.Units[unitTypeID].Type)
 						--unit:JumpToNearestValidPlot()
-						MapModData.bBypassOnCanSaveUnit = true
 						unit:Kill(true, -1)
 						AddEncampmentBaseUnit(plot, encampmentID)
 					end
@@ -543,7 +544,7 @@ function BarbSpawnPerTurn()		--called right after PlotsPerTurn()
 	local adjGameTurn = Game.GetGameTurn() / GAME_SPEED_MULTIPLIER
 
 	--TO DO: adjust for game speed 
-	adjGameTurn = adjGameTurn < TURN_CEILING and adjGameTurn or TURN_CEILING
+	adjGameTurn = adjGameTurn < BARB_TURN_CEILING and adjGameTurn or BARB_TURN_CEILING
 
 	--Ad hoc tech awarding (in case no one ever researches)
 	for techID, awardByTurn in pairs(techAwardByTurn) do
@@ -704,7 +705,7 @@ function BarbSpawnPerTurn()		--called right after PlotsPerTurn()
 
 	--Undead / Demons
 	local armageddonStage = gWorld.armageddonStage
-	local manaDepletion = 1 - (gWorld.sumOfAllMana / MapModData.STARTING_SUM_OF_ALL_MANA)
+	local manaDepletion = 1 - (gWorld.sumOfAllMana / STARTING_SUM_OF_ALL_MANA)
 	local demonUndeadSpawn = 0
 	if 10 < armageddonStage then
 		demonUndeadSpawn = 33 * manaDepletion

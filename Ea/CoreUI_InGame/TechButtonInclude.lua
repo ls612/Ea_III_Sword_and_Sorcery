@@ -508,6 +508,20 @@ function AddSmallButtonsToTechButton( thisTechButtonInstance, tech, maxSmallButt
 	end
 
 	--Paz add
+
+	--EaActions
+	for row in GameInfo.EaActions("ShowInTechTree IS NOT NULL AND TechReq = '" .. techType .. "'") do
+		local buttonName = "B"..tostring(buttonNum)
+		local thisButton = thisTechButtonInstance[buttonName]
+		if thisButton then
+			IconHookup( row.IconIndex, textureSize, row.IconAtlas, thisButton )
+			thisButton:SetHide( false )
+			local toolTip = "[COLOR_POSITIVE_TEXT]" .. Locale.Lookup(row.Description) .. "[ENDCOLOR][NEWLINE][NEWLINE]" .. Locale.Lookup(row.Help)
+			thisButton:SetToolTipString(toolTip)
+			buttonNum = buttonNum + 1
+		end		
+	end
+
 	--Add anything we want in Technology_EaTechButtonIncludeSpecials
 	for row in GameInfo.Technology_EaTechButtonIncludeSpecials(condition) do
 		local buttonName = "B"..tostring(buttonNum)
@@ -527,11 +541,10 @@ function AddSmallButtonsToTechButton( thisTechButtonInstance, tech, maxSmallButt
 	end
 
 	--Spells
-	local spellSQL = "SpellClass IS NOT NULL AND (TechReq = '" .. techType .. "' OR OrTechReq = '" .. techType .. "')"
 	local arcaneToolTip
 	local divineToolTip
 	local fallenToolTip
-	for spellInfo in GameInfo.EaActions(spellSQL) do
+	for spellInfo in GameInfo.EaActions("SpellClass IS NOT NULL AND (TechReq = '" .. techType .. "' OR OrTechReq = '" .. techType .. "')") do
 		if spellInfo.AITarget or spellInfo.AICombatRole then	--spell has really been added to game (not just table)
 			local spellClass = spellInfo.SpellClass
 			if spellClass == "Arcane" or spellClass == "Both" then
@@ -559,7 +572,7 @@ function AddSmallButtonsToTechButton( thisTechButtonInstance, tech, maxSmallButt
 		local buttonName = "B"..tostring(buttonNum)
 		local thisButton = thisTechButtonInstance[buttonName]
 		if thisButton then
-			local iconAtlas, iconIndex = "EA_SPELLS_ATLAS", 0
+			local iconAtlas, iconIndex = "EA_SPELLS_ATLAS_EXTRA", 4
 			IconHookup(iconIndex, textureSize, iconAtlas, thisButton)
 			thisButton:SetHide( false )
 			thisButton:SetToolTipString(arcaneToolTip)
@@ -570,7 +583,7 @@ function AddSmallButtonsToTechButton( thisTechButtonInstance, tech, maxSmallButt
 		local buttonName = "B"..tostring(buttonNum)
 		local thisButton = thisTechButtonInstance[buttonName]
 		if thisButton then
-			local iconAtlas, iconIndex = "EA_SPELLS_ATLAS", 2
+			local iconAtlas, iconIndex = "EA_SPELLS_ATLAS_EXTRA", 6
 			IconHookup(iconIndex, textureSize, iconAtlas, thisButton)
 			thisButton:SetHide( false )
 			thisButton:SetToolTipString(divineToolTip)
@@ -581,7 +594,7 @@ function AddSmallButtonsToTechButton( thisTechButtonInstance, tech, maxSmallButt
 		local buttonName = "B"..tostring(buttonNum)
 		local thisButton = thisTechButtonInstance[buttonName]
 		if thisButton then
-			local iconAtlas, iconIndex = "EA_SPELLS_ATLAS", 1
+			local iconAtlas, iconIndex = "EA_SPELLS_ATLAS_EXTRA", 5
 			IconHookup(iconIndex, textureSize, iconAtlas, thisButton)
 			thisButton:SetHide( false )
 			thisButton:SetToolTipString(fallenToolTip)

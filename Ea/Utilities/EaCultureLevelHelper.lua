@@ -8,17 +8,18 @@
 local MapModData = MapModData
 MapModData.gT = MapModData.gT or {}
 local gT = MapModData.gT
+local EaSettings = MapModData.EaSettings
 
 --------------------------------------------------------------
 --Settings
 --------------------------------------------------------------
-local POLICY_MULTIPLIER = 5												--policies as a function of culture generation / population
-local POLICY_ADD = 4													--extra policies you would get with no culture
+local CL_C_PER_POP_MULTIPLIER =		EaSettings.CL_C_PER_POP_MULTIPLIER		--policies as a function of culture generation / population
+local CL_C_PER_POP_ADD =			EaSettings.CL_C_PER_POP_ADD				--extra policies you would get with no culture
 
-local CL_APPROACH_FACTOR = 0.006 / MapModData.GAME_SPEED_MULTIPLIER		--try to approach steady state level by this fraction of the difference each turn
-local CL_TARGET_CHANGE = 0.06 / MapModData.GAME_SPEED_MULTIPLIER		--reduce or increase per turn change toward this level
-local CL_CHANGE_DAMPING_EXPONENT = 1/2									--lower value pushes per turn change toward target change
-
+local CL_APPROACH_FACTOR =			EaSettings.CL_APPROACH_FACTOR			--try to approach steady state level by this fraction of the difference each turn
+local CL_TARGET_CHANGE =			EaSettings.CL_TARGET_CHANGE				--reduce or increase per turn change toward this level; IMPORTANT!!!: Update EXPECTED_CL_CHANGE in EaAICivPlanning.lua to match this
+local CL_CHANGE_DAMPING_EXPONENT =	EaSettings.CL_CHANGE_DAMPING_EXPONENT	--lower value pushes per turn change toward target change
+local CL_RECENCY_BIAS =				EaSettings.CL_RECENCY_BIAS
 
 --------------------------------------------------------------
 --File Locals
@@ -34,7 +35,7 @@ local floor = math.floor
 
 
 local function SteadyStateCL(aveCulturePerPop)
-	return POLICY_MULTIPLIER * aveCulturePerPop + POLICY_ADD
+	return CL_C_PER_POP_MULTIPLIER * aveCulturePerPop + CL_C_PER_POP_ADD
 end
 
 
@@ -66,9 +67,10 @@ function UpdateCulturalLevel(iPlayer, eaPlayer)
 	local cumCultureLastTurn = eaPlayer.cumCulture
 	local culturalLevelLastTurn = eaPlayer.culturalLevel
 	local cumCulture = player:GetJONSCulture()
-	local culturePerPopThisTurn = (cumCulture - cumCultureLastTurn) / population
 	eaPlayer.cumCulture = cumCulture 
-	eaPlayer.aveCulturePerPop = (aveCulturePerPopLastTurn * (gameTurn - 1) + culturePerPopThisTurn) / gameTurn
+	local culturePerPopThisTurn = (cumCulture - cumCultureLastTurn) / population
+
+	eaPlayer.aveCulturePerPop = (aveCulturePerPopLastTurn * (gameTurn - 1) + culturePerPopThisTurn * (1 + CL_RECENCY_BIAS)) / (gameTurn + CL_RECENCY_BIAS)
 
 	local steadyStateCL = SteadyStateCL(eaPlayer.aveCulturePerPop)
 	--Voluspa
@@ -79,7 +81,7 @@ function UpdateCulturalLevel(iPlayer, eaPlayer)
 	local culturalLevel = culturalLevelLastTurn + GetCLChange(culturalLevelLastTurn, steadyStateCL)
 
 	eaPlayer.culturalLevel = culturalLevel
-	eaPlayer.culturalLevelChange = culturalLevel - culturalLevelLastTurn		--used by AI (not UI)
+	--eaPlayer.culturalLevelChange = culturalLevel - culturalLevelLastTurn		--used by AI (not UI)
 end
 
 -- UI for active player

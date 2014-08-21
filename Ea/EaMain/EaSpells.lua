@@ -8,16 +8,17 @@
 --------------------------------------------------------------
 print("Loading EaSpells.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
-
 
 ---------------------------------------------------------------
 -- Local defines
 ---------------------------------------------------------------
 
 --constants
+local STARTING_SUM_OF_ALL_MANA =			EaSettings.STARTING_SUM_OF_ALL_MANA
+
 local DOMAIN_LAND =							DomainTypes.DOMAIN_LAND
 local DOMAIN_SEA =							DomainTypes.DOMAIN_SEA
+
 local EAMOD_DEVOTION =						GameInfoTypes.EAMOD_DEVOTION
 local EA_PLOTEFFECT_PROTECTIVE_WARD =		GameInfoTypes.EA_PLOTEFFECT_PROTECTIVE_WARD
 local EA_WONDER_ARCANE_TOWER =				GameInfoTypes.EA_WONDER_ARCANE_TOWER
@@ -50,7 +51,7 @@ local UNITCOMBAT_MOUNTED =					GameInfoTypes.UNITCOMBAT_MOUNTED
 local UNHAPPINESS_PER_CITY =				GameDefines.UNHAPPINESS_PER_CITY
 local UNIT_SUFFIXES =						UNIT_SUFFIXES
 local NUM_UNIT_SUFFIXES =					#UNIT_SUFFIXES
-local MOD_MEMORY_HALFLIFE =					MOD_MEMORY_HALFLIFE
+local MOD_MEMORY_HALFLIFE =					EaSettings.MOD_MEMORY_HALFLIFE
 
 local MAX_RANGE =							MAX_RANGE
 local FIRST_SPELL_ID =						FIRST_SPELL_ID
@@ -73,6 +74,7 @@ local gg_baseUnitPower =					gg_baseUnitPower
 local gg_playerPlotActionTargeted =			gg_playerPlotActionTargeted
 local gg_eaSpecial =						gg_eaSpecial
 local gg_regularCombatType =				gg_regularCombatType
+local gg_eaTechClass =						gg_eaTechClass
 
 --localized functions
 local floor =								math.floor
@@ -91,13 +93,14 @@ local SetAIValues = {}
 local Do = {}
 local Interrupt = {}
 local Finish = {}
+local Turns = {}	--only tested if TurnsToComplete == nil
 
 --file control
 --	All applicable are calculated in TestEaSpell any time we are in this file. Never change anywhere else!
 --  Non-applicable variables will hold value from last call
 local g_eaAction
 local g_eaActionID
-local g_SpellClass				-- nil, "Arcane" or "Devine"
+local g_SpellClass				-- nil, "Arcane" or "Divine"
 local g_bAIControl				--for AI control of unit (can be true for human if Autoplay)
 local g_iActivePlayer = Game.GetActivePlayer()
 
@@ -370,8 +373,8 @@ end
 --Finish functions are for actions that take time, runs when completed (does generic function like building add, or calls custom function).
 
 
-function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)	--called from UnitPanel
-	Dprint("TestEaSpellForHumanUI ", eaActionID, iPlayer, unit, iPerson, testX, testY)
+local function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)	--called from UnitPanel
+	--print("TestEaSpellForHumanUI ", eaActionID, iPlayer, unit, iPerson, testX, testY)
 	--	MapModData.bShow	--> "Show" this button in UI.
 	--	MapModData.bAllow	--> "Can do" (always equals Test return)
 	--	MapModData.text	--> Displayed text when boolean1 = true (will display in red if boolean2 = false)
@@ -384,9 +387,11 @@ function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)
 	MapModData.text = "no help text"	--will change below or take eaAction.Help value
 
 	--By default, text will be from eaAction.Help. If we want something else, then we must change below or in action-specific SetUI function.
+	if gWorld.evilControl == "Sealed" and g_eaPlayer.bIsFallen and g_eaAction.AhrimansVaultMatters then
+		MapModData.text = "[COLOR_WARNING_TEXT]Ahriman's Vault has been sealed; the Fallen can no longer cast spells[ENDCOLOR]"
+	end
 
-
-	if g_bEmbarked then
+	if MapModData.text == "no help text" and g_bEmbarked then
 		MapModData.text = "[COLOR_WARNING_TEXT]Cannot cast spell while embarked[ENDCOLOR]"
 	end
 
@@ -422,7 +427,6 @@ function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)
 		end
 	end
 
-
 	if MapModData.text == "no help text" and not g_bSufficientFaith then
 		local magicStuff = g_eaPlayer.bUsesDivineFavor and "divine favor" or "mana"
 		if g_faith < 1 then
@@ -432,7 +436,7 @@ function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)
 		end
 	end
 
-	if not g_bEmbarked and SetUI[eaActionID] then
+	if MapModData.text == "no help text" and SetUI[eaActionID] then
 		SetUI[eaActionID]()
 	end
 
@@ -445,8 +449,8 @@ function TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY)
 	g_bUICall = false
 	g_bSetDelayedFailForUI = false
 end
---LuaEvents.EaSpellsTestEaSpellForHumanUI.Add(TestEaSpellForHumanUI)
-LuaEvents.EaSpellsTestEaSpellForHumanUI.Add(function(eaActionID, iPlayer, unit, iPerson, testX, testY) return HandleError61(TestEaSpellForHumanUI, eaActionID, iPlayer, unit, iPerson, testX, testY) end)
+local function X_TestEaSpellForHumanUI(eaActionID, iPlayer, unit, iPerson, testX, testY) return HandleError61(TestEaSpellForHumanUI, eaActionID, iPlayer, unit, iPerson, testX, testY) end
+LuaEvents.EaSpellsTestEaSpellForHumanUI.Add(X_TestEaSpellForHumanUI)
 
 function TestEaSpell(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTargetTest)
 	--This function sets all file locals related to iPlayer and iPerson 
@@ -529,8 +533,8 @@ function TestEaSpell(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTar
 		g_value = g_eaAction.FixedFaith
 		return false
 	else
-		local turnsToComplete = g_eaAction.TurnsToComplete
-		g_modSpellTimesTurns = g_mod * turnsToComplete		--this will get set again in TestTargetEaSpell, just need quick value here for early faith bailout
+		local turnsToComplete = g_eaAction.TurnsToComplete	--just need quick value here for early faith bailout
+		g_modSpellTimesTurns = g_mod * ((turnsToComplete and turnsToComplete ~= 1000) and turnsToComplete or 1)	
 		if g_faith < g_modSpellTimesTurns then
 			g_bSufficientFaith = false
 			g_value = g_modSpellTimesTurns
@@ -540,7 +544,10 @@ function TestEaSpell(eaActionID, iPlayer, unit, iPerson, testX, testY, bAINonTar
 		end
 	end
 
-	g_worldManaDepletion = 1 - gWorld.sumOfAllMana / MapModData.STARTING_SUM_OF_ALL_MANA
+	g_worldManaDepletion = 1 - gWorld.sumOfAllMana / STARTING_SUM_OF_ALL_MANA
+
+	--Block for fallen after Ahriman's Vault sealed
+	if gWorld.evilControl == "Sealed" and g_eaPlayer.bIsFallen and g_eaAction.AhrimansVaultMatters then return false end
 
 	--Specific action test (runs if it exists)
 	if Test[eaActionID] and not Test[eaActionID]() then return false end
@@ -587,7 +594,7 @@ function TestEaSpellTarget(eaActionID, testX, testY, bAITargetTest)
 			local bBlock = false
 			if targetPlotActions[eaActionID] and targetPlotActions[eaActionID] ~= g_iPerson then		--another AI GP is doing this or building improvement here (or on way for AI)
 				if g_bAIControl then
-					print("TestEaActionTarget returning false for AI becuase someone else has claimed this action at this plot")
+					print("TestEaSpellTarget returning false for AI becuase someone else has claimed this action at this plot")
 					return false
 				else
 					g_bSomeoneElseDoingHere = true
@@ -698,7 +705,11 @@ function TestEaSpellTarget(eaActionID, testX, testY, bAITargetTest)
 	end
 
 	local turnsToComplete = g_eaAction.TurnsToComplete
-	g_modSpellTimesTurns = g_modSpell * turnsToComplete
+	if not turnsToComplete then
+		turnsToComplete = Turns[eaActionID]()
+		g_eaPerson.turnsToComplete = turnsToComplete
+	end
+	g_modSpellTimesTurns = g_modSpell * ((turnsToComplete and turnsToComplete ~= 1000) and turnsToComplete or 1)
 	if g_faith < g_modSpellTimesTurns then			--this is generic minimum; Test or TestTarget can fail on more restrictive value
 		g_bSufficientFaith = false
 		g_value = g_modSpellTimesTurns --for UI
@@ -717,7 +728,7 @@ function TestEaSpellTarget(eaActionID, testX, testY, bAITargetTest)
 		--Update progress
 		local progressHolder = g_eaAction.ProgressHolder
 		local progress
-		if progressHolder == "Person" then
+		if progressHolder == "Self" then
 			progress = g_eaPerson.progress[eaActionID] or 0
 		elseif progressHolder == "City" then
 			progress = g_eaCity.progress[eaActionID] or 0
@@ -725,7 +736,7 @@ function TestEaSpellTarget(eaActionID, testX, testY, bAITargetTest)
 			progress = g_eaCity.civProgress[g_iPlayer] and g_eaCity.civProgress[g_iPlayer][eaActionID] or 0
 		elseif progressHolder == "Plot" then
 			local buildID = GameInfoTypes[g_eaAction.BuildType]
-			progress = g_plot:GetBuildProgress(buildID)
+			progress = g_plot:GetBuildProgress(buildID) or 0
 		end
 
 		turnsToComplete = turnsToComplete - progress
@@ -782,6 +793,11 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 		end
 	end
 
+	--TO DO: g_unit needs to be maintained in all Do's that transform!
+
+
+	if not g_unit or g_unit:IsDead() or g_unit:IsDelayedDeath() then return true end	--nothing else we ned to do
+
 	if g_bGreatPerson then
 		--memory for AI specialization
 		if g_eaAction.GPModType1 then
@@ -826,6 +842,10 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 
 	--Ongoing actions with turnsToComplete > 0 (DoEaSpell is called each turn of construction)
 	local turnsToComplete = g_eaAction.TurnsToComplete
+	if not turnsToComplete then
+		turnsToComplete = Turns[eaActionID]()
+		g_eaPerson.turnsToComplete = turnsToComplete
+	end
 	
 	--Reserve this action at this plot (will cause TestEaSpellTarget fail for other GPs)
 	if 1 < turnsToComplete and not g_eaAction.NoGPNumLimit then
@@ -886,7 +906,7 @@ function DoEaSpell(eaActionID, iPlayer, unit, iPerson, targetX, targetY)
 			end
 		else
 			local progressTable
-			if progressHolder == "Person" then
+			if progressHolder == "Self" then
 				progressTable = g_eaPerson.progress
 				print("getting progressTable from person ", progressTable, g_eaAction.Type)
 			elseif progressHolder == "City" then
@@ -981,10 +1001,20 @@ function TestSpellLearnable(iPlayer, iPerson, spellID, spellClass, bSuppressMini
 			if eaPerson.class1 ~= "Devout" and eaPerson.class2 ~= "Devout" then return false end
 		end
 		if spellInfo.PantheismCult then return false end		--these are never chosen
+
+		--TO DO: finish class and subclass checks (not used often but may happen)
+		if spellInfo.ExcludeGPSubclass and eaPerson.subclass == spellInfo.ExcludeGPSubclass then return false end
+		if spellInfo.RestrictedToGPSubclass and eaPerson.subclass ~= spellInfo.RestrictedToGPSubclass then return false end
+
+		local needsSpell = spellInfo.KnowsSpell
 		local spells = eaPerson.spells
 		for i = 1, #spells do
 			if spells[i] == spellID then return false end		--already known
+			if needsSpell and spells[i] == needsSpell then
+				needsSpell = nil
+			end
 		end
+		if needsSpell then return false end
 	end
 	local eaPlayer = gPlayers[iPlayer]
 	if eaPlayer.bIsFallen then
@@ -1002,12 +1032,10 @@ function TestSpellLearnable(iPlayer, iPerson, spellID, spellClass, bSuppressMini
 			if spellInfo.AndTechReq and not team:IsHasTech(GameInfoTypes[spellInfo.AndTechReq]) then return false end
 		end
 	end
-	--TO DO: class and subclass checks (not used often but may happen)
 
 	if spellInfo.PantheismCult and not player:HasPolicy(GameInfoTypes.POLICY_PANTHEISM) then return end		--show cult spell only if Pantheistic
 	if spellInfo.ReligionNotFounded and gReligions[GameInfoTypes[spellInfo.ReligionNotFounded] ] then return false end
 	if spellInfo.ReligionFounded and not gReligions[GameInfoTypes[spellInfo.ReligionFounded] ] then return false end
-	if spellInfo.MaleficiumLearnedByAnyone and gWorld.maleficium ~= "Learned" then return false end
 	if spellInfo.ExcludeFallen and eaPlayer.bIsFallen then return false end
 	if spellInfo.CivReligion and eaPlayer.religionID ~= GameInfoTypes[spellInfo.CivReligion] then return false end
 	if spellInfo.PolicyReq and not player:HasPolicy(GameInfoTypes[spellInfo.PolicyReq]) then return false end
@@ -1056,6 +1084,11 @@ local animals = {GameInfoTypes.UNIT_WOLVES, GameInfoTypes.UNIT_LIONS}
 local treeEnts = {GameInfoTypes.UNIT_TREE_ENT}
 --Remember to update numTableUnits below!
 
+local function ModelSummon_Test()
+	g_int3 = g_player:GetNumUnitsOutOfSupply()
+	return true
+end
+
 local function ModelSummon_TestTarget()
 	print("ModelSummon_TestTarget")
 	local unitTable, numTableUnits
@@ -1101,7 +1134,7 @@ local function ModelSummon_TestTarget()
 	elseif g_eaActionID == EA_SPELL_SUMMON_ARCHDEMON or g_eaActionID == EA_SPELL_CALL_ARCHANGEL or g_eaActionID == EA_SPELL_CALL_MAJOR_SPIRIT then
 		archType = true
 	end
-
+	
 	if archType then
 		g_value = gg_baseUnitPower[g_int1]		--g_int1 was set to unitTypeID in specific Test function below
 		print("archtype id, power = ", g_int1, g_value)
@@ -1290,7 +1323,8 @@ local function ModelSummon_SetUI()
 end
 
 local function ModelSummon_SetAIValues()
-	gg_aiOptionValues.i = g_value		--AI should always want this maxed out
+--g_int3
+	gg_aiOptionValues.i = g_value / (2 * g_int3 + 1)		--AI should always want this maxed out unless suffering from units out of supply
 end
 
 local function ModelSummon_Finish()
@@ -1340,54 +1374,63 @@ local function ModelSummon_Finish()
 end
 
 --EA_SPELL_CONJURE_MONSTER
+Test[GameInfoTypes.EA_SPELL_CONJURE_MONSTER] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_CONJURE_MONSTER] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_CONJURE_MONSTER] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_CONJURE_MONSTER] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_CONJURE_MONSTER] = ModelSummon_Finish
 
 --EA_SPELL_REANIMATE_DEAD
+Test[GameInfoTypes.EA_SPELL_REANIMATE_DEAD] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_REANIMATE_DEAD] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_REANIMATE_DEAD] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_REANIMATE_DEAD] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_REANIMATE_DEAD] = ModelSummon_Finish
 
 --EA_SPELL_RAISE_DEAD
+Test[GameInfoTypes.EA_SPELL_RAISE_DEAD] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_RAISE_DEAD] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_RAISE_DEAD] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_RAISE_DEAD] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_RAISE_DEAD] = ModelSummon_Finish
 
 --EA_SPELL_SUMMON_ABYSSAL_CREATURES
+Test[GameInfoTypes.EA_SPELL_SUMMON_ABYSSAL_CREATURES] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_SUMMON_ABYSSAL_CREATURES] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_SUMMON_ABYSSAL_CREATURES] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_SUMMON_ABYSSAL_CREATURES] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_SUMMON_ABYSSAL_CREATURES] = ModelSummon_Finish
 
 --EA_SPELL_SUMMON_DEMON
+Test[GameInfoTypes.EA_SPELL_SUMMON_DEMON] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_SUMMON_DEMON] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_SUMMON_DEMON] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_SUMMON_DEMON] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_SUMMON_DEMON] = ModelSummon_Finish
 
 --EA_SPELL_CALL_HEAVENS_GUARD
+Test[GameInfoTypes.EA_SPELL_CALL_HEAVENS_GUARD] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_CALL_HEAVENS_GUARD] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_CALL_HEAVENS_GUARD] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_CALL_HEAVENS_GUARD] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_CALL_HEAVENS_GUARD] = ModelSummon_Finish
 
 --EA_SPELL_CALL_ANGEL
+Test[GameInfoTypes.EA_SPELL_CALL_ANGEL] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_CALL_ANGEL] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_CALL_ANGEL] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_CALL_ANGEL] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_CALL_ANGEL] = ModelSummon_Finish
 
 --EA_SPELL_CALL_ANIMALS
+Test[GameInfoTypes.EA_SPELL_CONJURE_MONSTER] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_CALL_ANIMALS] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_CALL_ANIMALS] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_CALL_ANIMALS] = ModelSummon_SetAIValues
 Finish[GameInfoTypes.EA_SPELL_CALL_ANIMALS] = ModelSummon_Finish
 
 --EA_SPELL_CALL_TREE_ENT
+Test[GameInfoTypes.EA_SPELL_CALL_TREE_ENT] = ModelSummon_TestTarget
 TestTarget[GameInfoTypes.EA_SPELL_CALL_TREE_ENT] = ModelSummon_TestTarget
 SetUI[GameInfoTypes.EA_SPELL_CALL_TREE_ENT] = ModelSummon_SetUI
 SetAIValues[GameInfoTypes.EA_SPELL_CALL_TREE_ENT] = ModelSummon_SetAIValues
@@ -1411,6 +1454,7 @@ Test[GameInfoTypes.EA_SPELL_SUMMON_ARCHDEMON] = function()
 		g_int1 = firstArchdemonID
 	end
 	print("-g_int1 = ", g_int1, GameInfo.Units[g_int1].Type)
+	g_int3 = 0	--units out of supply (don't care for archtypes)
 	return true
 end
 TestTarget[GameInfoTypes.EA_SPELL_SUMMON_ARCHDEMON] = ModelSummon_TestTarget
@@ -1436,6 +1480,7 @@ Test[GameInfoTypes.EA_SPELL_CALL_ARCHANGEL] = function()
 		g_int1 = firstArchangelID
 	end
 	print("-g_int1 = ", g_int1, GameInfo.Units[g_int1].Type)
+	g_int3 = 0	--units out of supply (don't care for archtypes)
 	return true
 end
 TestTarget[GameInfoTypes.EA_SPELL_CALL_ARCHANGEL] = ModelSummon_TestTarget
@@ -1473,6 +1518,7 @@ Test[GameInfoTypes.EA_SPELL_CALL_MAJOR_SPIRIT] = function()
 	end
 	g_int1 = bestGodUnitID
 	print("-g_int1 = ", g_int1, GameInfo.Units[g_int1].Type)
+	g_int3 = 0	--units out of supply (don't care for archtypes)
 	return true
 end
 TestTarget[GameInfoTypes.EA_SPELL_CALL_MAJOR_SPIRIT] = ModelSummon_TestTarget
@@ -1522,7 +1568,7 @@ local function ModelRanged_TestTarget()	--TO DO: need better AI targeting logic 
 		bAllowCity = false
 		bValueDamaged = false
 	elseif g_eaActionID == EA_SPELL_MASS_ENERGY_DRAIN then
-		range = 3
+		range = 4
 		bAutoTargetAll = true
 		bLivingOnly = true
 		bAllowCity = false
@@ -2094,7 +2140,6 @@ Finish[GameInfoTypes.EA_SPELL_BANISH] = function()
 	for i = 1, g_count do
 		local unit = g_table[i]
 		local plot = unit:GetPlot()
-		MapModData.bBypassOnCanSaveUnit = true
 		unit:Kill(true, g_iPlayer)
 		plot:AddFloatUpMessage("Banished!", 2)
 	end
@@ -2158,7 +2203,6 @@ Finish[GameInfoTypes.EA_SPELL_BANISH_UNDEAD] = function()
 	for i = 1, g_count do
 		local unit = g_table[i]
 		local plot = unit:GetPlot()
-		MapModData.bBypassOnCanSaveUnit = true
 		unit:Kill(true, g_iPlayer)
 		plot:AddFloatUpMessage("Banished!", 2)
 	end
@@ -2227,11 +2271,9 @@ Finish[GameInfoTypes.EA_SPELL_TURN_UNDEAD] = function()
 			local unitTypeID = unit:GetUnitType()
 			local newUnit = g_player:InitUnit(unitTypeID, x, y)
 			newUnit:SetSummonerIndex(-99)
-			MapModData.bBypassOnCanSaveUnit = true
 			newUnit:Convert(unit, false)
 			turnPlot:AddFloatUpMessage("Turned Undead!", 2)
 		else
-			MapModData.bBypassOnCanSaveUnit = true
 			unit:Kill(true, g_iPlayer)
 			unit:GetPlot():AddFloatUpMessage("Turned Undead!", 2)
 		end
@@ -2296,7 +2338,6 @@ Finish[GameInfoTypes.EA_SPELL_BANISH_DEMONS] = function()
 	for i = 1, g_count do
 		local unit = g_table[i]
 		local plot = unit:GetPlot()
-		MapModData.bBypassOnCanSaveUnit = true
 		unit:Kill(true, g_iPlayer)
 		plot:AddFloatUpMessage("Banished!", 2)
 	end
@@ -2360,7 +2401,6 @@ Finish[GameInfoTypes.EA_SPELL_BANISH_ANGELS] = function()
 	for i = 1, g_count do
 		local unit = g_table[i]
 		local plot = unit:GetPlot()
-		MapModData.bBypassOnCanSaveUnit = true
 		unit:Kill(true, g_iPlayer)
 		plot:AddFloatUpMessage("Banished!", 2)
 	end
@@ -2484,7 +2524,7 @@ end
 Do[GameInfoTypes.EA_SPELL_TIME_STOP] = function()
 	g_eaPerson.timeStop = g_int1
 	if g_iPlayer == g_iActivePlayer then
-		gg_bActivePlayerTimeStop = true
+		gWorld.bActivePlayerTimeStop = true
 	end
 	UseManaOrDivineFavor(g_iPlayer, g_iPerson, g_int1 * 100, false)
 	return true
@@ -2622,6 +2662,7 @@ TestTarget[GameInfoTypes.EA_SPELL_BLIGHT] = function()
 
 		--spell can "work" even if blocked, but only to weaken; best AI value is to blight AND weaken
 		local strengthNeeded = 0
+		local featureID = g_plot:GetFeatureType()
 		if featureID == FEATURE_FOREST or featureID == FEATURE_JUNGLE or featureID == FEATURE_MARSH then	--Must overpower any living terrain here
 			strengthNeeded = strengthNeeded + g_plot:GetLivingTerrainStrength()
 		end
@@ -2684,7 +2725,6 @@ Finish[GameInfoTypes.EA_SPELL_BLIGHT] = function()
 	end
 	return true
 end
-
 
 --EA_SPELL_HEX
 TestTarget[GameInfoTypes.EA_SPELL_HEX] = function()
@@ -2789,15 +2829,10 @@ Finish[GameInfoTypes.EA_SPELL_BECOME_LICH] = function()
 	local pts = g_unit:GetLevel() * 100
 	g_eaPerson.unitTypeID = UNIT_LICH
 	g_eaPerson.predestinedAgeOfDeath = nil
-	InitGPUnit(g_iPlayer, g_iPerson, g_x, g_y, g_unit, UNIT_LICH, -1)
+	g_unit = InitGPUnit(g_iPlayer, g_iPerson, g_x, g_y, g_unit, UNIT_LICH, -1)
 	UseManaOrDivineFavor(g_iPlayer, g_iPerson, pts * 100)
 	return true
 end
-
-
-
-
-
 
 --EA_SPELL_FINGER_OF_DEATH
 --EA_SPELL_CHARM_MONSTER
@@ -2906,6 +2941,175 @@ Do[GameInfoTypes.EA_SPELL_HEAL] = function()
 	g_obj1:SetDamage(g_obj1:GetDamage() - g_int1, -1)		-- heal
 	UseManaOrDivineFavor(g_iPlayer, g_iPerson, g_int1)
 	g_specialEffectsPlot = g_obj1:GetPlot()
+	return true
+end
+
+
+--EA_SPELL_LECTIO_OCCULTUS
+TestTarget[GameInfoTypes.EA_SPELL_LECTIO_OCCULTUS] = function()
+	for iPos = 1, g_player:GetLengthResearchQueue() do
+		local iTech = g_player:GetQueuedResearch(iPos)
+		if gg_eaTechClass[iTech] == "Arcane" or gg_eaTechClass[iTech] == "ArcaneEvil" then
+			if g_player:CanResearch(iTech) then
+				g_int1 = iTech
+				return true
+			end
+		end
+	end
+	g_testTargetSwitch = 1
+	return false
+end
+
+SetUI[GameInfoTypes.EA_SPELL_LECTIO_OCCULTUS] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			local techName = Locale.Lookup(GameInfo.Technologies[g_int1].Description)
+			MapModData.text = "Convert " .. g_modSpell .. " mana per turn into research toward " .. techName
+		elseif g_testTargetSwitch == 1 then
+			MapModData.text = "[COLOR_WARNING_TEXT]You must have an arcane technology in the research queue to cast this spell[ENDCOLOR]"
+		else
+			MapModData.text = "[COLOR_WARNING_TEXT]Can only be used in the caster's Tower or Temple[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_SPELL_LECTIO_OCCULTUS] = function()
+	gg_aiOptionValues.b = g_modSpell * g_faith / 10000	
+end
+
+Do[GameInfoTypes.EA_SPELL_LECTIO_OCCULTUS] = function()
+	--convert from mana to research points without any modification
+	local researchLeft = g_player:GetResearchCost(g_int1) - g_player:GetResearchProgress(g_int1) + 15
+	local pts = researchLeft < g_modSpell and researchLeft or g_modSpell	--don't allow much overflow from this spell
+	local teamTechs = g_team:GetTeamTechs()
+	teamTechs:ChangeResearchProgress(g_int1, pts, g_player)
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, pts)
+	return true
+end
+
+--EA_SPELL_GREATER_LECTIO_OCCULTUS
+TestTarget[GameInfoTypes.EA_SPELL_GREATER_LECTIO_OCCULTUS] = function()
+	for iPos = 1, g_player:GetLengthResearchQueue() do
+		local iTech = g_player:GetQueuedResearch(iPos)
+		if gg_eaTechClass[iTech] == "Arcane" or gg_eaTechClass[iTech] == "ArcaneEvil" then
+			if g_player:CanResearch(iTech) then
+				g_int1 = iTech
+				return true
+			end
+		end
+	end
+	g_testTargetSwitch = 1
+	return false
+end
+
+SetUI[GameInfoTypes.EA_SPELL_GREATER_LECTIO_OCCULTUS] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			local techName = Locale.Lookup(GameInfo.Technologies[g_int1].Description)
+			MapModData.text = "Convert " .. (g_modSpell * 2) .. " mana per turn into research toward " .. techName
+		elseif g_testTargetSwitch == 1 then
+			MapModData.text = "[COLOR_WARNING_TEXT]You must have an arcane technology in the research queue to cast this spell[ENDCOLOR]"
+		else
+			MapModData.text = "[COLOR_WARNING_TEXT]Can only be used in the caster's Tower or Temple[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_SPELL_GREATER_LECTIO_OCCULTUS] = function()
+	gg_aiOptionValues.b = g_modSpell * g_faith / 9999	
+end
+
+Do[GameInfoTypes.EA_SPELL_GREATER_LECTIO_OCCULTUS] = function()
+	--convert from mana to research points without any modification
+	local researchLeft = g_player:GetResearchCost(g_int1) - g_player:GetResearchProgress(g_int1) + 15
+	local pts = researchLeft < g_modSpell * 2 and researchLeft or g_modSpell * 2	--don't allow much overflow from this spell
+	local teamTechs = g_team:GetTeamTechs()
+	teamTechs:ChangeResearchProgress(g_int1, pts, g_player)
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, pts)
+	return true
+end
+
+--EA_SPELL_LECTIO_DIVINA
+TestTarget[GameInfoTypes.EA_SPELL_LECTIO_DIVINA] = function()
+	for iPos = 1, g_player:GetLengthResearchQueue() do
+		local iTech = g_player:GetQueuedResearch(iPos)
+		if gg_eaTechClass[iTech] == "Divine" then
+			if g_player:CanResearch(iTech) then
+				g_int1 = iTech
+				return true
+			end
+		end
+	end
+	g_testTargetSwitch = 1
+	return false
+end
+
+SetUI[GameInfoTypes.EA_SPELL_LECTIO_DIVINA] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			local techName = Locale.Lookup(GameInfo.Technologies[g_int1].Description)
+			MapModData.text = "Convert " .. g_modSpell .. " divine favor per turn into research toward " .. techName
+		elseif g_testTargetSwitch == 1 then
+			MapModData.text = "[COLOR_WARNING_TEXT]You must have a divine technology in the research queue to cast this spell[ENDCOLOR]"
+		else
+			MapModData.text = "[COLOR_WARNING_TEXT]Can only be used in the caster's Temple[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_SPELL_LECTIO_DIVINA] = function()
+	gg_aiOptionValues.b = g_modSpell * g_faith / 10000	
+end
+
+Do[GameInfoTypes.EA_SPELL_LECTIO_DIVINA] = function()
+	--convert from divine favor to research points without any modification
+	local researchLeft = g_player:GetResearchCost(g_int1) - g_player:GetResearchProgress(g_int1) + 15
+	local pts = researchLeft < g_modSpell and researchLeft or g_modSpell	--don't allow much overflow from this spell
+	local teamTechs = g_team:GetTeamTechs()
+	teamTechs:ChangeResearchProgress(g_int1, pts, g_player)
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, pts)
+	return true
+end
+
+--EA_SPELL_GREATER_LECTIO_DIVINA
+TestTarget[GameInfoTypes.EA_SPELL_GREATER_LECTIO_DIVINA] = function()
+	for iPos = 1, g_player:GetLengthResearchQueue() do
+		local iTech = g_player:GetQueuedResearch(iPos)
+		if gg_eaTechClass[iTech] == "Divine" then
+			if g_player:CanResearch(iTech) then
+				g_int1 = iTech
+				return true
+			end
+		end
+	end
+	g_testTargetSwitch = 1
+	return false
+end
+
+SetUI[GameInfoTypes.EA_SPELL_GREATER_LECTIO_DIVINA] = function()
+	if g_bNonTargetTestsPassed then
+		if g_bAllTestsPassed then
+			local techName = Locale.Lookup(GameInfo.Technologies[g_int1].Description)
+			MapModData.text = "Convert " .. (g_modSpell * 2) .. " divine favor per turn into research toward " .. techName
+		elseif g_testTargetSwitch == 1 then
+			MapModData.text = "[COLOR_WARNING_TEXT]You must have a divine technology in the research queue to cast this spell[ENDCOLOR]"
+		else
+			MapModData.text = "[COLOR_WARNING_TEXT]Can only be used in the caster's Temple[ENDCOLOR]"
+		end
+	end
+end
+
+SetAIValues[GameInfoTypes.EA_SPELL_GREATER_LECTIO_DIVINA] = function()
+	gg_aiOptionValues.b = g_modSpell * g_faith / 9999	--little better than non greater 
+end
+
+Do[GameInfoTypes.EA_SPELL_GREATER_LECTIO_DIVINA] = function()
+	--convert from divine favor to research points without any modification
+	local researchLeft = g_player:GetResearchCost(g_int1) - g_player:GetResearchProgress(g_int1) + 15
+	local pts = researchLeft < g_modSpell * 2 and researchLeft or g_modSpell * 2	--don't allow much overflow from this spell
+	local teamTechs = g_team:GetTeamTechs()
+	teamTechs:ChangeResearchProgress(g_int1, pts, g_player)
+	UseManaOrDivineFavor(g_iPlayer, g_iPerson, pts)
 	return true
 end
 

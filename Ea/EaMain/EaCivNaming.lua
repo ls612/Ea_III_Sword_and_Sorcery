@@ -5,7 +5,6 @@
 
 print("Loading EaCivNaming.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- local defs
@@ -210,18 +209,18 @@ function SetNewCivName(iPlayer, eaCivID)
 		local eaPersonRowID = eaCivInfo.FoundingGPType
 		GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, true)
 		if class and class == eaPlayer.delayedGPclass then
-			eaPlayer.delayedGPclass = nil
+			eaPlayer.delayedGPclass = false
 		end
 		if subclass and subclass == eaPlayer.delayedGPsubclass then
-			eaPlayer.delayedGPsubclass = nil
+			eaPlayer.delayedGPsubclass = false
 		end
 	end
 	if eaPlayer.delayedGPclass then
 		GenerateGreatPerson(iPlayer, eaPlayer.delayedGPclass, nil)
-		eaPlayer.delayedGPclass = nil
+		eaPlayer.delayedGPclass = false
 	elseif eaPlayer.delayedGPsubclass then
 		GenerateGreatPerson(iPlayer, nil, eaPlayer.delayedGPsubclass)
-		eaPlayer.delayedGPsubclass = nil
+		eaPlayer.delayedGPsubclass = false
 	end
 
 	--Do civ-specific effects

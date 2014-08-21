@@ -5,16 +5,13 @@
 
 print("Loading EaCities.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- Settings
 --------------------------------------------------------------
 
-local MANA_CONSUMED_PER_ANRA_FOLLOWER_PER_TURN =	1
-local GUESSED_GROWTH_EXPIRE_TURN = 50	--AI makes a guess at growth potential, but uses real size instead this many turns after city founding
-local RACE_HATRED_FOR_RAZED_POP = 1 / (GAME_SPEED_MULTIPLIER + MAP_SIZE_MULTIPLIER)	--eg, 0.5 for standard/standard
-
+local MANA_CONSUMED_PER_ANRA_FOLLOWER_PER_TURN =	EaSettings.MANA_CONSUMED_PER_ANRA_FOLLOWER_PER_TURN
+local RACE_HATRED_FOR_RAZED_POP =					EaSettings.RACE_HATRED_FOR_RAZED_POP		--eg, 0.5 for standard/standard
 
 --------------------------------------------------------------
 -- File Locals
@@ -48,7 +45,6 @@ local BUILDING_RACIAL_DISHARMONY =			GameInfoTypes.BUILDING_RACIAL_DISHARMONY
 local BUILDING_FOREFATHERS_STATUE =			GameInfoTypes.BUILDING_FOREFATHERS_STATUE
 local BUILDING_SLAVE_BREEDING_PEN =			GameInfoTypes.BUILDING_SLAVE_BREEDING_PEN
 local BUILDING_HARBOR =						GameInfoTypes.BUILDING_HARBOR
-local BUILDING_SMOKEHOUSE =					GameInfoTypes.BUILDING_SMOKEHOUSE
 local BUILDING_WINERY =						GameInfoTypes.BUILDING_WINERY
 local BUILDING_BREWERY =					GameInfoTypes.BUILDING_BREWERY
 local BUILDING_DISTILLERY =					GameInfoTypes.BUILDING_DISTILLERY
@@ -59,7 +55,7 @@ local BUILDING_CULT_CAHRA_1F =				GameInfoTypes.BUILDING_CULT_CAHRA_1F
 local PROCESS_WORLD_WEAVE =					GameInfoTypes.PROCESS_WORLD_WEAVE
 local PROCESS_WORLD_SALVATION =				GameInfoTypes.PROCESS_WORLD_SALVATION
 local PROCESS_WORLD_CORRUPTION =			GameInfoTypes.PROCESS_WORLD_CORRUPTION
-
+local PROCESS_AHRIMANS_TRIBUTE =			GameInfoTypes.PROCESS_AHRIMANS_TRIBUTE
 local PROCESS_EA_BLESSINGS =				GameInfoTypes.PROCESS_EA_BLESSINGS
 local PROCESS_MAJOR_SPIRITS_TRIBUTE =		GameInfoTypes.PROCESS_MAJOR_SPIRITS_TRIBUTE
 local PROCESS_FAERIES_TRIBUTE =				GameInfoTypes.PROCESS_FAERIES_TRIBUTE
@@ -127,7 +123,6 @@ local PLOT_HILLS =							PlotTypes.PLOT_HILLS
 local PLOT_MOUNTAIN =						PlotTypes.PLOT_MOUNTAIN
 local PROMOTION_SLAVE =						GameInfoTypes.PROMOTION_SLAVE
 local PROMOTION_SLAVERAIDER =				GameInfoTypes.PROMOTION_SLAVERAIDER
---local EA_ACTION_TAKE_RESIDENCE =			GameInfoTypes.EA_ACTION_TAKE_RESIDENCE
 
 local VERY_UNHAPPY_THRESHOLD =				GameDefines.VERY_UNHAPPY_THRESHOLD
 
@@ -160,11 +155,12 @@ local Rand =				Map.Rand
 local floor =				math.floor
 
 --localized global functions
-local HandleError =			HandleError
 local HandleError21 =		HandleError21
 local HandleError31 =		HandleError31
 local HandleError41 =		HandleError41
+local HandleError51 =		HandleError51
 local HandleError61 =		HandleError61
+local HandleError81 =		HandleError81
 local GetMemoizedPlotIndexDistance = GetMemoizedPlotIndexDistance
 local PlotDistance =			Map.PlotDistance
 local GetPlotFromXY =		Map.GetPlot
@@ -445,12 +441,12 @@ function ConvertUnitProductionByMatch(iPlayer, fromStr, toStr)
 	local fromMatches = gg_unitPrefixUnitIDs[fromStr]
 	for i = 1, #fromMatches do
 		local unitTypeID = fromMatches[i]
+		local unitType = GameInfo.Units[unitTypeID].Type
+		local newUnitType = gsub(unitType, fromStr, toStr)
+		local newUnitTypeID = GameInfoTypes[newUnitType]
 		for city in player:Cities() do
 			local unitProd = city:GetUnitProduction(unitTypeID)
 			if 0 < unitProd then
-				local unitType = GameInfo.Units[unitTypeID].Type
-				local newUnitType = gsub(unitType, fromStr, toStr)
-				local newUnitTypeID = GameInfoTypes[newUnitType]
 				city:SetUnitProduction(newUnitTypeID, unitProd)
 				city:SetUnitProduction(unitTypeID, 0)
 			end
@@ -623,7 +619,7 @@ function TestSetEligibleCityCults(city, eaCity, feedbackCultID)
 end
 local TestSetEligibleCityCults = TestSetEligibleCityCults
 
-function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so that remote plot system works
+function CityPerCivTurn(iPlayer)		--full and city states
 	local floor = math.floor
 	print("CityPerCivTurn; City info (Name/Size/BuildQueue):")
 
@@ -647,17 +643,12 @@ function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so t
 		if eaCity.iOwner == iPlayer then
 			local plot = GetPlotByIndex(iPlot)
 			local city = plot:GetPlotCity()
-			if not city then	--was raized to ground, delete from gCities and gg_playerCityPlotIndexes
-				gCities[iPlot] = nil
-				for iLoopCity, iLoopPlot in pairs(gg_playerCityPlotIndexes[iPlayer]) do
-					local loopCity = player:GetCityByID(iLoopCity)
-					if not loopCity then
-						gg_playerCityPlotIndexes[iPlayer][iLoopCity] = nil
-					end
-				end
+			if not city then
+				error("No city for eaCity in CityPerCivTurn" .. iPlayer .. " " .. plot:GetPlotIndex())
+				--Should always be caught by OnCityKilled; need to know otherwise
 			elseif city:GetOwner() ~= iPlayer then
-				error("eaCity owner disagrees with city owner", iPlayer, city:GetOwner(), city:GetName())
-				--Need to detect and fix if this happens for any reason (TO DO: edge case, one civ raizes and another builds on same plot same turn)
+				error("eaCity owner disagrees with city owner" .. iPlayer .. " " .. city:GetOwner() .. " " .. city:GetName())
+				--Need to detect and fix if this happens for any reason
 			else
 				local iCity = city:GetID()
 				cityCount = cityCount + 1
@@ -709,10 +700,7 @@ function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so t
 						count = count + cityRemoteImproveCount[improveType]
 					end
 					--print("RemoteImproves Building/Count = ", GameInfo.Buildings[buildingID].Type, count)
-					if 0 < city:GetNumFreeBuilding(buildingID) then	--true if ever given for free
-						city:SetNumFreeBuilding(buildingID, count + 1)
-						city:SetNumRealBuilding(buildingID, 0)
-					elseif 0 < city:GetNumRealBuilding(buildingID) then	--true if ever built
+					if 0 < city:GetNumRealBuilding(buildingID) then	--true if ever built
 						city:SetNumRealBuilding(buildingID, count + 1)
 					else
 						local enablingBuildingID = remoteImproveEnablingBuildings[buildingID]
@@ -733,11 +721,11 @@ function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so t
 				TestSetEligibleCityCults(city, eaCity, nil)
 
 				--Religion/Cult effects
-				if bAnraFounded then
+				if bAnraFounded and gWorld.evilControl ~= "Sealed" then
 					local consumedMana = city:GetNumFollowers(RELIGION_ANRA) * MANA_CONSUMED_PER_ANRA_FOLLOWER_PER_TURN
 					if 0 < consumedMana then
 						gWorld.sumOfAllMana = gWorld.sumOfAllMana - consumedMana
-						eaPlayer.manaConsumed = (eaPlayer.manaConsumed or 0) + consumedMana
+						eaPlayer.manaConsumed = eaPlayer.manaConsumed + consumedMana
 						city:Plot():AddFloatUpMessage(Locale.Lookup("TXT_KEY_EA_CONSUMED_MANA", consumedMana))	
 					end
 				end
@@ -785,11 +773,11 @@ function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so t
 					elseif orderID == PROCESS_PATRONAGE then	
 						eaPlayer.cityStatePatronage = (eaPlayer.cityStatePatronage or 0) + productionYieldRate / 4
 					elseif orderID == PROCESS_TRAINING_EXERCISES then	
-						eaPlayer.trainingXP = (eaPlayer.trainingXP or 0) + productionYieldRate / 4
+						eaPlayer.trainingXP = eaPlayer.trainingXP + productionYieldRate / 4
 					--elseif orderID == PROCESS_AHRIMANS_TRIBUTE then	
 					--	local manaBurn = floor(productionYieldRate / 4)
 					--	gWorld.sumOfAllMana = gWorld.sumOfAllMana - manaBurn
-					--	eaPlayer.manaConsumed = (eaPlayer.manaConsumed or 0) + manaBurn
+					--	eaPlayer.manaConsumed = eaPlayer.manaConsumed + manaBurn
 					end
 				end
 
@@ -845,13 +833,12 @@ function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so t
 				end
 
 				--Race hatreds grow based on city razing
-				if city:IsRazing() then
-					if cityRaceID ~= eaPlayer.race then
+				if cityRaceID ~= eaPlayer.race and city:IsRazing() then
+					if not bAnraFounded or (city:GetReligiousMajority() ~= RELIGION_ANRA and not city:IsHolyCityForReligion(RELIGION_ANRA)) then
 						local addHate = RACE_HATRED_FOR_RAZED_POP
 						gRaceDiploMatrix[cityRaceID][eaPlayer.race] = gRaceDiploMatrix[cityRaceID][eaPlayer.race] + addHate
 					end
 				end
-				----gRaceDiploMatrix[observerRaceID][subjectRaceID]  RACE_HATRED_FOR_RAZED_POP
 
 				--Full civ only
 				if bFullCiv then
@@ -863,33 +850,6 @@ function CityPerCivTurn(iPlayer)		--Full civ only		TO DO: must be real civs so t
 					classPoints[4] = classPoints[4] + city:GetSpecialistCount(SPECIALIST_ARTISAN) * 2
 					classPoints[6] = classPoints[6] + city:GetSpecialistCount(SPECIALIST_DISCIPLE) * 2
 					classPoints[7] = classPoints[7] + city:GetSpecialistCount(SPECIALIST_ADEPT) * 2
-
-					--update residence status and effects if GP walks away or dies
-					if eaCity.resident ~= -1 then
-						local x, y = city:GetX(), city:GetY()
-						local iPerson = eaCity.resident
-						local eaPerson = gPeople[iPerson]
-						if eaPerson then
-							local iUnit = eaPerson.iUnit
-							if iUnit ~= -1 then
-								local unit = player:GetUnitByID(iUnit)
-								if unit then
-									local personX, personY = unit:GetX(), unit:GetY()
-									if personX ~= x or personY ~= y then
-										InterruptEaAction(iPlayer, iPerson)
-									end
-								else
-									error("No unit for GP")
-								end
-							else
-								InterruptEaAction(iPlayer, iPerson)
-							end
-						else		--Person died, update city for no resident
-							eaCity.resident = -1
-							RemoveResidentEffects(city)
-						end
-
-					end
 
 					--auto-indenture
 					if eaCity.autoIndenturePop and eaCity.autoIndenturePop < size and eaCity.conscriptTurn ~= gameTurn then
@@ -929,14 +889,13 @@ local function OnPlayerCityFounded(iPlayer, x, y)
 	InitCityPlotIndexGlobals(iPlayer, iCity)
 
 	-- Ea city init
-	local eaCity = {iOwner = iPlayer,	-- !!!!!!!!!!!!!!!!  INIT NEW EaCity HERE !!!!!!!!!!!!!!!!
+	local eaCity = {iOwner = iPlayer,			-- !!!!!!!!!!!!!!!!  INIT NEW EaCity HERE !!!!!!!!!!!!!!!!
 					x = x,
 					y = y,
 					openLandTradeRoutes = {},	-- index by other eaCityIndex; holds other city owner (so trade route is open on re-conqest)
 					openSeaTradeRoutes = {},	
 					progress = {},
 					civProgress = {},
-					resident = -1,
 					size = 1,				--updated per turn; used to know how much pop lost from conquest
 					disease = 0,			-- +values represent turns remaining for disease, -values represents turns remaining for plague
 					remotePlots = {},		--index by iPlot (holds true for now...)
@@ -948,8 +907,23 @@ local function OnPlayerCityFounded(iPlayer, x, y)
 					culturePercentBoost = 0,
 					eligibleCults = {},
 					unimprovedForestJungle = 0,
-					desertCahraFollower = 0
+					desertCahraFollower = 0,
+
+					--keys below added for strict table function
+					conscriptTurn = false,
+					autoIndenturePop = false,
+					holyCityFor = false,
+					gpHappiness = false,
+					gpFaith = false,
+					gpCulture = false,
+					gpGold = false,
+					gpScience = false,
+					gpProduction = false,
+					gpTraining = false,
+
 					}
+
+	MakeTableStrict(eaCity)
 
 	gCities[iPlot] = eaCity
 
@@ -986,7 +960,8 @@ local function OnPlayerCityFounded(iPlayer, x, y)
 
 	print("New city", iPlayer, iPlot, x, y, iCity, city:GetName())
 end
-GameEvents.PlayerCityFounded.Add(function(iPlayer, x, y) return HandleError31(OnPlayerCityFounded, iPlayer, x, y) end)
+local function X_OnPlayerCityFounded(iPlayer, x, y) return HandleError31(OnPlayerCityFounded, iPlayer, x, y) end
+GameEvents.PlayerCityFounded.Add(X_OnPlayerCityFounded)
 
 local function OnSetPopulation(x, y, oldPopulation, newPopulation)
 	if oldPopulation == newPopulation then return end
@@ -998,24 +973,24 @@ local function OnSetPopulation(x, y, oldPopulation, newPopulation)
 	local plot = Map.GetPlot(x, y)
 	local city = plot:GetPlotCity()
 	print("Population change ", x, y, city:GetName(), oldPopulation, newPopulation, city:GetOwner(), Players[city:GetOwner()]:IsAlive())
+
+
+	--This may be our first indication of a resurected player; however, I'm not sure if GetOwner works yet,
+	--so I'm duplicating this functionality in OnCityCaptureComplete to be safe.
 	local iOwner = city:GetOwner()
-
-	--This is our first indication of a resurected player
-	--owner:IsAlive()=false still but they must be coming back to life if newPopulation > 0
-	--dead player is detected in OnCityCaptureComplete
-
-	if 0 < newPopulation and not realCivs[iOwner] then
+	if 0 < newPopulation and iOwner ~= -1 and not realCivs[iOwner] then
 		ResurectedPlayer(iOwner)
 	end
 
+	--[[  done by OnPlayerCityFounded or OnCityCaptureComplete so not needed here (I'm not sure if iOwner is updated anyway)
 	--add/remove from gg_playerCityPlotIndexes
-	if oldPopulation == 0 then	--new city for this player
+	if oldPopulation == 0 and iOwner ~= -1 then	--new city for this player
 		InitCityPlotIndexGlobals(iOwner, city:GetID())	--this is probably first call; no harm in redundant calls
 	end 
-
-	local owner = Players[iOwner]
+	]]
 
 	if city:IsRazing() then
+		local owner = Players[iOwner]
 		if newPopulation < oldPopulation then
 			--if Slave Raider policy then give them a slaves unit
 
@@ -1056,115 +1031,161 @@ local function OnSetPopulation(x, y, oldPopulation, newPopulation)
 		end
 	end
 end
-GameEvents.SetPopulation.Add(function(x, y, oldPopulation, newPopulation) return HandleError41(OnSetPopulation, x, y, oldPopulation, newPopulation) end)
+local function X_OnSetPopulation(x, y, oldPopulation, newPopulation) return HandleError41(OnSetPopulation, x, y, oldPopulation, newPopulation) end
+GameEvents.SetPopulation.Add(X_OnSetPopulation)
 
-local function OnCityCaptureComplete(iPlayer, bCapital, x, y, iNewOwner)
+local function OnCityCaptureComplete(iPlayer, bCapital, x, y, iNewOwner, iOldPopulation, bConquest)
 
-	--what about city destroyed on conquest?
+	--Function name is deceptive: this is really from CvPlayer::acquireCity. iNewOwner is trustworthy, but iPlayer could be
+	--either owner before capture or liberator. In latter case, there is no indication in args of owner before capture.
+	--This could even be a gift transfer (bGift is not passed by current GameEvents).
 
-	--On liberation, iPlayer is liberating player and iNewOwner is civ liberated to (which may be a resurection); there is no indication who captured from
+	--This could potentialy fire after OnCityKilled (for example in OCC capture; not sure if any other way)
 
-	local oldOwner = Players[iPlayer]
+	--iNewOwner might be a resurected player (may be detected by pop change first)
+
 	local newOwner = Players[iNewOwner]
 	local iPlot = GetPlotIndexFromXY(x, y)
 	local plot = GetPlotByIndex(iPlot)
 	local city = plot:GetPlotCity()
-	print("CityCaptureComplete", iPlayer, bCapital, x, y, iNewOwner, city:GetName())
+	print("CityCaptureComplete", iPlayer, bCapital, x, y, iNewOwner, iOldPopulation, bConquest, city and city:GetName() or "city was killed")
 
-	local iCity = city:GetID()
-	local eaCity = gCities[iPlot]
-	local eaPreviousOwner = gPlayers[iPlayer]
-	local eaNewOwner = gPlayers[iNewOwner]
+	if city then		--otherwise it should already have fired OnCityKilled before we got here
 
-	InitCityPlotIndexGlobals(iNewOwner, iCity)
+		local iCity = city:GetID()
+		local eaCity = gCities[iPlot]
+		local eaNewOwner = gPlayers[iNewOwner]
 
-	if oldOwner:IsAlive() then
-		if bCapital then
-			CheckCapitalBuildings(iPlayer)
+		--Figure out who previous owner and conquering player are, since they aren't necessarily iPlayer, iNewOwner, and bConquest is
+		--untrustworthy because this could be liberation resulting from conquest (in which case bConquest = false)
+		local iPreviousOwner = eaCity.iOwner
+		local iConqueringPlayer, conqueringPlayer, eaConqueringPlayer
+		if iPreviousOwner == iPlayer then
+			if bConquest then
+				iConqueringPlayer = iNewOwner
+				eaConqueringPlayer = eaNewOwner
+				print("This is a city conquest without liberation: iConqueringPlayer = " .. iConqueringPlayer .. "; iPreviousOwner = " .. iPreviousOwner)
+			else
+				print("This is a city gift")
+			end
+		else
+			iConqueringPlayer = iPlayer
+			eaConqueringPlayer = gPlayers[iPlayer]
+			print("This is a city conquest WITH liberation: iConqueringPlayer = " .. iConqueringPlayer .. "; iPreviousOwner = " .. iPreviousOwner)
 		end
-	else
-		print("!!!! Dead player detected from OnCityCaptureComplete !!!!")
-		DeadPlayer(iPlayer)
-	end
+		conqueringPlayer = iConqueringPlayer and Players[iConqueringPlayer]
 
+		eaCity.iOwner = iNewOwner
 
-	if eaCity.iOwner ~= iPlayer then
-		print("!!!!!!!!!!!! Error: EaCity info corrupted ", eaCity.iOwner)
-	end
-	eaCity.iOwner = iNewOwner
+		local previousOwner = Players[iPreviousOwner]
 
-	--Check race
-	local newCivRace = eaNewOwner.race
-	if newCivRace == GetCityRace(city) then
-		city:SetNumRealBuilding(BUILDING_RACIAL_DISHARMONY, 0)
-	else
-		city:SetNumRealBuilding(BUILDING_RACIAL_DISHARMONY, 1)
-	end
-
-	--City size and pop killed
-	local oldSize = eaCity.size
-	local newSize = city:GetPopulation()
-	eaCity.size = newSize
-	local popKilled = oldSize - newSize
-
-	--Credit for conquest
-	eaNewOwner.conquests = eaNewOwner.conquests or {}
-	local uniqueConquestStr = iPlot .. "-" .. city:GetGameTurnFounded()
-	if not eaNewOwner.conquests[uniqueConquestStr] then
-		eaNewOwner.conquests[uniqueConquestStr] = oldSize
-	end
-
-	--If Slave Raider present get slaves for each pop killed
-	for i = 0, plot:GetNumUnits() - 1 do
-		local unit = plot:GetUnit(i)
-		if unit:IsHasPromotion(PROMOTION_SLAVERAIDER) then
-			local raceID = GetCityRace(city)
-			local unitID
-			if raceID == EARACE_MAN then
-				unitID = UNIT_SLAVES_MAN
-			elseif raceID == EARACE_SIDHE then
-				unitID = UNIT_SLAVES_SIDHE
-			else 
-				unitID = UNIT_SLAVES_ORC
+		if previousOwner:IsAlive() then
+			if bCapital then
+				CheckCapitalBuildings(iPreviousOwner)
 			end
-			if eaNewOwner.eaCivNameID == EACIV_GAZIYA then
-				popKilled = floor(popKilled / 3 + 0.5)
+		else
+			print("!!!! Dead player detected from OnCityCaptureComplete !!!!")
+			DeadPlayer(iPreviousOwner, iConqueringPlayer)
+		end
+
+		--Resurected player (may be caught by OnSetPopulation but I'm not sure)
+		if not realCivs[iNewOwner] then
+			ResurectedPlayer(iNewOwner)
+		end
+
+		InitCityPlotIndexGlobals(iNewOwner, iCity)
+
+		--Check race
+		local newCivRace = eaNewOwner.race
+		if newCivRace == GetCityRace(city) then
+			city:SetNumRealBuilding(BUILDING_RACIAL_DISHARMONY, 0)
+		else
+			city:SetNumRealBuilding(BUILDING_RACIAL_DISHARMONY, 1)
+		end
+
+		--City size and pop killed
+		local oldSize = eaCity.size
+		local newSize = city:GetPopulation()
+		eaCity.size = newSize
+		local popKilled = oldSize - newSize
+
+		--Conquest
+		if iConqueringPlayer then
+
+			--Credit for conquest
+			local uniqueConquestStr = iPlot .. "-" .. city:GetGameTurnFounded()
+			if not eaConqueringPlayer.conquests[uniqueConquestStr] then
+				eaConqueringPlayer.conquests[uniqueConquestStr] = oldSize
 			end
 
-			for j = 1, popKilled do
-				local newUnit = newOwner:InitUnit(unitID, x, y)
-				--newUnit:JumpToNearestValidPlot()
-				newUnit:SetHasPromotion(PROMOTION_SLAVE, true)
+			--Slave Raider
+			if conqueringPlayer:HasPolicy(POLICY_SLAVE_RAIDERS) then
+				local raceID = GetCityRace(city)
+				local unitID
+				if raceID == EARACE_MAN then
+					unitID = UNIT_SLAVES_MAN
+				elseif raceID == EARACE_SIDHE then
+					unitID = UNIT_SLAVES_SIDHE
+				else 
+					unitID = UNIT_SLAVES_ORC
+				end
+				if eaConqueringPlayer.eaCivNameID == EACIV_GAZIYA then
+					popKilled = floor(popKilled / 3 + 0.5)
+				end
+
+				for j = 1, popKilled do
+					local newUnit = newOwner:InitUnit(unitID, x, y)
+					--newUnit:JumpToNearestValidPlot()
+					newUnit:SetHasPromotion(PROMOTION_SLAVE, true)
+				end
 			end
-			break
+		end
+
+		local team = Teams[newOwner:GetTeam()]
+		if team:IsHasTech(TECH_SAILING) then
+			TestNaturalHarborForFreeHarbor(city)
 		end
 	end
-
-	--AddCityToResDistanceMatrixes(iNewOwner, city)
-	--CleanCityResDistanceMatrixes()
-
-	local team = Teams[newOwner:GetTeam()]
-	if team:IsHasTech(TECH_SAILING) then
-		TestNaturalHarborForFreeHarbor(city)
-	end
-
 end
-GameEvents.CityCaptureComplete.Add(function(iPlayer, bCapital, x, y, iNewOwner) return HandleError(OnCityCaptureComplete, iPlayer, bCapital, x, y, iNewOwner) end)
+local function X_OnCityCaptureComplete(iPlayer, bCapital, x, y, iNewOwner, iOldPopulation, bConquest) return HandleError81(OnCityCaptureComplete, iPlayer, bCapital, x, y, iNewOwner, iOldPopulation, bConquest) end
+GameEvents.CityCaptureComplete.Add(X_OnCityCaptureComplete)
 
---TO DO: city raized and salted
+local function OnCityKilled(iPlayer, iCity, iPlot, bCapital)	--only after razed to ground (not called by acquireCity)
+	print("OnCityKilled ", iPlayer, iCity, iPlot, bCapital)
+	local eaCity = gCities[iPlot]
+	if eaCity then
+		if eaCity.iOwner ~= iPlayer then	--these should agree (except in OCC where OnCityKilled fires before OnCityCaptureComplete)
+			print("!!!! ERROR: eaCity.iOwner did not agree with OnCityKilled iPlayer")
+		end
+		local eaPlayer = gPlayers[iPlayer]
+		if eaCity.holyCityFor and eaCity.holyCityFor[RELIGION_ANRA] then
+			gWorld.bAnraHolyCityExists = false			--can test ==false if we need to know if it ever existed
+			if not eaPlayer.bIsFallen then
+				eaPlayer.fallenFollowersDestr = (eaPlayer.fallenFollowersDestr or 0) + 50 --last owner gets credit for razing
+			end
+		end
+		gCities[iPlot] = nil		--we don't keep any info on dead cities, for now...
+		gg_playerCityPlotIndexes[iPlayer][iCity] = nil
 
-
+	elseif gg_init.bEnteredGame then
+		error("No eaCity for a city razed to ground")
+	else
+		print("City razed to ground before player entered game; must be The Fay")
+	end
+end
+local function X_OnCityKilled(iPlayer, iCity, iPlot, bCapital) return HandleError41(OnCityKilled, iPlayer, iCity, iPlot, bCapital) end
+GameEvents.CityKilled.Add(X_OnCityKilled)
 
 --------------------------------------------------------------
 -- River Connections
 --------------------------------------------------------------
-
-GameEvents.CityConnections.Add(function(iPlayer, bDirect) return not bDirect end)	--register testing for "non-direct" routes
+local function CityConnections(iPlayer, bDirect) return not bDirect end
+GameEvents.CityConnections.Add(CityConnections)	--register testing for "non-direct" routes
 
 local MAP_W, MAP_H = Map.GetGridSize()
 local riverManager = RiverManager:new(function(iPlot) return true end)
 
-function OnCityConnected(iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect)
+local function OnCityConnected(iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect)
 	--print("OnCityConnected ", iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect)
 	if g_riverDockByPlotIndex[iCityY * MAP_W + iCityX] and g_riverDockByPlotIndex[iToCityY * MAP_W + iToCityX] then
 		local fromRivers = riverManager:getRivers(iCityX, iCityY)
@@ -1179,9 +1200,11 @@ function OnCityConnected(iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect)
 	end
 	return false	
 end
-GameEvents.CityConnected.Add(function(iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect) return HandleError61(OnCityConnected, iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect) end)
+local function X_OnCityConnected(iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect) return HandleError61(OnCityConnected, iPlayer, iCityX, iCityY, iToCityX, iToCityY, bDirect) end
+GameEvents.CityConnected.Add(X_OnCityConnected)
 
-GameEvents.CanRazeOverride.Add(function() return true end)
+local function OnCanRazeOverride() return true end
+GameEvents.CanRazeOverride.Add(OnCanRazeOverride)
 
 --------------------------------------------------------------
 -- City builds
@@ -1201,7 +1224,8 @@ local function OnPlayerCanConstruct(iPlayer, buildingTypeID)
 	if eaPlayer.blockedBuildingsByID[buildingTypeID] then return false end
 	return true
 end
-GameEvents.PlayerCanConstruct.Add(function(iPlayer, buildingTypeID) return HandleError21(OnPlayerCanConstruct, iPlayer, buildingTypeID) end)
+local function X_OnPlayerCanConstruct(iPlayer, buildingTypeID) return HandleError21(OnPlayerCanConstruct, iPlayer, buildingTypeID) end
+GameEvents.PlayerCanConstruct.Add(X_OnPlayerCanConstruct)
 
 local processPolicyReq = {}
 for processInfo in GameInfo.Processes() do
@@ -1210,10 +1234,10 @@ for processInfo in GameInfo.Processes() do
 		processPolicyReq[processInfo.ID] = GameInfoTypes[policyType]
 	end
 end
-conversionWorldKeyByProcess = {	[PROCESS_WORLD_WEAVE] = "weaveConvertNum",
-								[PROCESS_WORLD_SALVATION] = "azzConvertNum",
-								[PROCESS_WORLD_CORRUPTION] = "anraConvertNum",
-								[PROCESS_EA_BLESSINGS] = "livingTerrainConvertStr"	}
+local conversionWorldKeyByProcess = {	[PROCESS_WORLD_WEAVE] = "weaveConvertNum",
+										[PROCESS_WORLD_SALVATION] = "azzConvertNum",
+										[PROCESS_WORLD_CORRUPTION] = "anraConvertNum",
+										[PROCESS_EA_BLESSINGS] = "livingTerrainConvertStr"	}
 
 local function OnPlayerCanMaintain(iPlayer, processTypeID)
 	--print("PazDebug OnPlayerCanMaintain ", iPlayer, processTypeID)
@@ -1226,7 +1250,8 @@ local function OnPlayerCanMaintain(iPlayer, processTypeID)
 	end
 	return false
 end
-GameEvents.PlayerCanMaintain.Add(function(iPlayer, processTypeID) return HandleError21(OnPlayerCanMaintain, iPlayer, processTypeID) end)
+local function X_OnPlayerCanMaintain(iPlayer, processTypeID) return HandleError21(OnPlayerCanMaintain, iPlayer, processTypeID) end
+GameEvents.PlayerCanMaintain.Add(X_OnPlayerCanMaintain)
 
 local TestCityCanConstruct = {}
 local function OnCityCanConstruct(iPlayer, iCity, buildingTypeID)
@@ -1236,7 +1261,8 @@ local function OnCityCanConstruct(iPlayer, iCity, buildingTypeID)
 	end
 	return true
 end
-GameEvents.CityCanConstruct.Add(function(iPlayer, iCity, buildingTypeID) return HandleError31(OnCityCanConstruct, iPlayer, iCity, buildingTypeID) end)
+local function X_OnCityCanConstruct(iPlayer, iCity, buildingTypeID) return HandleError31(OnCityCanConstruct, iPlayer, iCity, buildingTypeID) end
+GameEvents.CityCanConstruct.Add(X_OnCityCanConstruct)
 
 
 TestCityCanConstruct[GameInfoTypes.BUILDING_FLOATING_GARDENS] = function(iPlayer, iCity)
@@ -1254,7 +1280,7 @@ TestCityCanConstruct[GameInfoTypes.BUILDING_GOVERNORS_COMPOUND] = function(iPlay
 	return city:IsOccupied() and not city:IsNoOccupiedUnhappiness()
 end
 
-TestCityCanConstruct[GameInfoTypes.BUILDING_SMOKEHOUSE] = function(iPlayer, iCity)
+TestCityCanConstruct[GameInfoTypes.BUILDING_HUNTING_LODGE] = function(iPlayer, iCity)
 	local player = Players[iPlayer]
 	local city = player:GetCityByID(iCity)
 	if city:IsHasResourceLocal(RESOURCE_DEER, false) or city:IsHasResourceLocal(RESOURCE_BOARS, false) or city:IsHasResourceLocal(RESOURCE_FUR, false) or city:IsHasResourceLocal(RESOURCE_ELEPHANT, false) then
@@ -1270,13 +1296,8 @@ TestCityCanConstruct[GameInfoTypes.BUILDING_SMOKEHOUSE] = function(iPlayer, iCit
 			break
 		end
 	end
-	if bFoundRemote then
-		return true
-	end
-	return false
+	return bFoundRemote
 end
-
-TestCityCanConstruct[GameInfoTypes.BUILDING_HUNTING_LODGE] = TestCityCanConstruct[GameInfoTypes.BUILDING_SMOKEHOUSE]
 
 TestCityCanConstruct[GameInfoTypes.BUILDING_PORT] = function(iPlayer, iCity)
 	local player = Players[iPlayer]
@@ -1295,10 +1316,7 @@ TestCityCanConstruct[GameInfoTypes.BUILDING_PORT] = function(iPlayer, iCity)
 			break
 		end
 	end
-	if bFoundRemote then
-		return true
-	end
-	return false
+	return bFoundRemote
 end
 
 TestCityCanConstruct[GameInfoTypes.BUILDING_WHALERY] = function(iPlayer, iCity)
@@ -1317,10 +1335,7 @@ TestCityCanConstruct[GameInfoTypes.BUILDING_WHALERY] = function(iPlayer, iCity)
 			break
 		end
 	end
-	if bFoundRemote then
-		return true
-	end
-	return false
+	return bFoundRemote
 end
 
 
@@ -1329,10 +1344,11 @@ local function OnCityBuildingsIsBuildingSellable(iPlayer, buildingTypeID)
 	if prohibitSellBuildings[buildingTypeID] then return false end
 	return true
 end
-GameEvents.CityBuildingsIsBuildingSellable.Add(function(iPlayer, buildingTypeID) return HandleError21(OnCityBuildingsIsBuildingSellable, iPlayer, buildingTypeID) end)
+local function X_OnCityBuildingsIsBuildingSellable(iPlayer, buildingTypeID) return HandleError21(OnCityBuildingsIsBuildingSellable, iPlayer, buildingTypeID) end
+GameEvents.CityBuildingsIsBuildingSellable.Add(X_OnCityBuildingsIsBuildingSellable)
 
-g_numCaravansCanTrain = 0
-g_numCargoShipsCanTrain = 0
+--local g_numCaravansCanTrain = 0
+--local g_numCargoShipsCanTrain = 0
 
 --local TestPlayerCanTrain = {}
 local function OnPlayerCanTrain(iPlayer, unitTypeID)
@@ -1359,18 +1375,25 @@ local function OnPlayerCanTrain(iPlayer, unitTypeID)
 	--end
 	return true
 end
-GameEvents.PlayerCanTrain.Add(function(iPlayer, unitTypeID) return HandleError21(OnPlayerCanTrain, iPlayer, unitTypeID) end)
+local function X_OnPlayerCanTrain(iPlayer, unitTypeID) return HandleError21(OnPlayerCanTrain, iPlayer, unitTypeID) end
+GameEvents.PlayerCanTrain.Add(X_OnPlayerCanTrain)
 
 
 local TestCityCanTrain = {}
 local function OnCityCanTrain(iPlayer, iCity, unitTypeID)
 	--print("PazDebug OnCityCanTrain ", iPlayer, iCity, unitTypeID)
+	if unitTypeID == UNIT_SETTLERS_MAN or unitTypeID == UNIT_SETTLERS_SIDHE or unitTypeID == UNIT_SETTLERS_ORC then
+		local city = Players[iPlayer]:GetCityByID(iCity)
+		if city:GetPopulation() < 2 then return false end
+	end
+
 	if TestCityCanTrain[unitTypeID] then
 		return TestCityCanTrain[unitTypeID](iPlayer, iCity)
 	end
 	return true
 end
-GameEvents.CityCanTrain.Add(function(iPlayer, iCity, unitTypeID) return HandleError31(OnCityCanTrain, iPlayer, iCity, unitTypeID) end)
+local function X_OnCityCanTrain(iPlayer, iCity, unitTypeID) return HandleError31(OnCityCanTrain, iPlayer, iCity, unitTypeID) end
+GameEvents.CityCanTrain.Add(X_OnCityCanTrain)
 
 --[[
 TestCityCanTrain[GameInfoTypes.UNIT_CARAVAN] = function(iPlayer, iCity)
@@ -1453,8 +1476,12 @@ TestCityCanTrain[GameInfoTypes.UNIT_FISHING_BOATS] = function(iPlayer, iCity)
 	for iPlot, type in pairs(gg_remoteImprovePlot) do
 		if type == "Lake" then		--no stealing
 			local dist = GetMemoizedPlotIndexDistance(iPlot, iCityPlot)
-			if dist < 4 and iOwner == -1 or (iOwner == iPlayer and plot:GetImprovementType() == -1) then
-				return true
+			if dist < 4 then
+				local plot = GetPlotByIndex(iPlot)
+				local iOwner = plot:GetOwner()
+				if iOwner == -1 or (iOwner == iPlayer and plot:GetImprovementType() == -1) then
+					return true
+				end
 			end
 		elseif bCoastal and type == "FishingRes" then
 			local dist = GetMemoizedPlotIndexDistance(iPlot, iCityPlot)
@@ -1513,6 +1540,11 @@ TestCityCanTrain[GameInfoTypes.UNIT_WHALING_BOATS] = function(iPlayer, iCity)
 	return false
 end
 
+local function OnPlayerCanMaintain(playerID, processTypeID)
+	if processTypeID == PROCESS_AHRIMANS_TRIBUTE and gWorld.evilControl == "Sealed" then return false end
+	return true
+end
+GameEvents.PlayerCanMaintain.Add(OnPlayerCanMaintain)
 
 --Some others we might use:
 --GameEvents.PlayerCanMaintain(playerID, processTypeID); (TestAll)

@@ -5,7 +5,6 @@
 
 print("Loading EaUnits.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- File Locals
@@ -54,6 +53,7 @@ local PROMOTION_MITHRIL_WEAPONS =					GameInfoTypes.PROMOTION_MITHRIL_WEAPONS
 local RELIGION_CULT_OF_EPONA =						GameInfoTypes.RELIGION_CULT_OF_EPONA
 local RESOURCE_CITRUS =								GameInfoTypes.RESOURCE_CITRUS
 local TECH_STEEL_WORKING = 							GameInfoTypes.TECH_STEEL_WORKING
+local TECH_MITHRIL_WORKING = 						GameInfoTypes.TECH_MITHRIL_WORKING
 local UNITCOMBAT_MOUNTED = 							GameInfoTypes.UNITCOMBAT_MOUNTED
 local UNITCOMBAT_NAVAL =							GameInfoTypes.UNITCOMBAT_NAVAL
 local UNIT_FISHING_BOATS =							GameInfoTypes.UNIT_FISHING_BOATS
@@ -185,7 +185,6 @@ function EaUnitsInit(bNewGame)
 					end
 					if newUnitTypeID then
 						local newUnit = player:InitUnit(newUnitTypeID, unit:GetX(), unit:GetY())
-						MapModData.bBypassOnCanSaveUnit = true
 						newUnit:Convert(unit)
 					end
 				end
@@ -203,7 +202,6 @@ function EaUnitsInit(bNewGame)
 					end
 					if newUnitTypeID then
 						local newUnit = player:InitUnit(newUnitTypeID, unit:GetX(), unit:GetY())
-						MapModData.bBypassOnCanSaveUnit = true
 						newUnit:Convert(unit)
 					end
 				end
@@ -263,7 +261,6 @@ function ConvertUnitsByMatch(iPlayer, fromStr, toStr)	--preserves race (e.g., UN
 			local newUnitType = gsub(unitType, fromStr, toStr)
 			local newUnitTypeID = GameInfoTypes[newUnitType]
 			local newUnit = player:InitUnit(newUnitTypeID, unit:GetX(), unit:GetY())
-			MapModData.bBypassOnCanSaveUnit = true
 			newUnit:Convert(unit)
 		end
 	end
@@ -287,7 +284,6 @@ function HireMercenary(iPlayer, unit, upFront, gpt)
 			mercenaries[iOriginalOwner] = mercenaries[iOriginalOwner] or {}
 			mercenaries[iOriginalOwner][iNewUnit] = gpt
 			player:ChangeGold(-upFront)
-			MapModData.bBypassOnCanSaveUnit = true
 			newUnit:Convert(unit)		--sets xp, level, promotions (but not original owner)
 			newUnit:SetHasPromotion(PROMOTION_MERCENARY, true)
 			newUnit:SetHasPromotion(PROMOTION_FOR_HIRE, false)
@@ -332,7 +328,6 @@ function DismissMercenary(iPlayer, iUnit)
 				local newUnit = originalOwner:InitUnit(unitTypeID, x, y)
 				if newUnit then
 					bConverted = true
-					MapModData.bBypassOnCanSaveUnit = true
 					newUnit:Convert(unit)
 					newUnit:SetOriginalOwner(iOriginalOwner)
 					newUnit:SetHasPromotion(PROMOTION_MERCENARY, false)
@@ -355,7 +350,6 @@ function DismissMercenary(iPlayer, iUnit)
 		end
 		if not bConverted then
 			print("!!!! WARNING: Merc was dismissed and original owner exists, but unit could not be returned for some reason")
-			MapModData.bBypassOnCanSaveUnit = true
 			unit:Kill(true, -1)
 		end
 	end
@@ -386,7 +380,7 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 	local bHasSteelWorking = team:IsHasTech(TECH_STEEL_WORKING)
 	local bHasMithrilWorking = team:IsHasTech(TECH_MITHRIL_WORKING)
 	local iLongWallOwner = gWonders[EA_WONDER_THE_LONG_WALL] and Map.GetPlotByIndex(gWonders[EA_WONDER_THE_LONG_WALL].iPlot):GetOwner()
-	local bMayBeSlowedByLongWall = iLongWallOwner and team:IsAtWar(Players[iLongWallOwner]:GetTeam())
+	local bMayBeSlowedByLongWall = iLongWallOwner and iLongWallOwner ~= -1 and team:IsAtWar(Players[iLongWallOwner]:GetTeam())
 	local longWallMod = iLongWallOwner and gWonders[EA_WONDER_THE_LONG_WALL].mod
 	local bNoCitrus = bFullCiv and player:GetNumResourceAvailable(RESOURCE_CITRUS, true) < 1
 	local bHasWarspirit = bFullCiv and player:HasPolicy(POLICY_WARSPIRIT)
@@ -512,19 +506,16 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 							local spawnPlot = GetPlotForSpawn(plot, BARB_PLAYER_INDEX, 2, false, false, false, false, false, false, unit)
 							if spawnPlot then
 								local x, y = spawnPlot:GetXY()
-								MapModData.bBypassOnCanSaveUnit = true
 								local newUnit = Players[BARB_PLAYER_INDEX]:InitUnit(unitTypeID, x, y)
 								newUnit:Convert(unit, false)
 								iUnit = newUnit:GetID()
 								unit = newUnit			
 								spawnPlot:AddFloatUpMessage("Unbound dead has gone hostile!", 1)
 							else
-								MapModData.bBypassOnCanSaveUnit = true
 								unit:Kill(true, -1)
 								plot:AddFloatUpMessage("Unbound dead has un-animated", 1)						
 							end
 						--elseif dice < 3 then
-						--	MapModData.bBypassOnCanSaveUnit = true
 						--	unit:Kill(true, -1)
 						--	plot:AddFloatUpMessage("Unbound dead has un-animated", 1)
 						end				
@@ -582,12 +573,12 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 							end
 						end
 					end
-					if unitCombatTypeID == UNITCOMBAT_NAVAL then
-						if bRemoveOceanBlock then
-							unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE_UNTIL_ASTRONOMY, false)
-							unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE, false)
-						end
+					--remove ocean block for applicable civs
+					if bRemoveOceanBlock then
+						unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE_UNTIL_ASTRONOMY, false)
+						unit:SetHasPromotion(PROMOTION_OCEAN_IMPASSABLE, false)
 					end
+				
 				elseif bHorseMounted[unitTypeID] then
 					if unit:IsHasPromotion(PROMOTION_STALLIONS_OF_EPONA) then
 						gg_counts.stallionsOfEpona = gg_counts.stallionsOfEpona + 1
@@ -659,9 +650,9 @@ function UnitPerCivTurn(iPlayer)	--runs for full civs and city states
 	--XP from process or finisher
 	if bFullCiv then
 		if player:HasPolicy(POLICY_MILITARISM_FINISHER) then
-			eaPlayer.trainingXP = (eaPlayer.trainingXP or 0) + player:GetTotalJONSCulturePerTurn() / 3
+			eaPlayer.trainingXP = eaPlayer.trainingXP + player:GetTotalJONSCulturePerTurn() / 3
 		end
-		if eaPlayer.trainingXP and 10 < eaPlayer.trainingXP and 0 < countCombatUnits then
+		if eaPlayer.trainingXP ~= 0 and 10 < eaPlayer.trainingXP and 0 < countCombatUnits then
 			local distributeXP = floor(eaPlayer.trainingXP / countCombatUnits)
 			if 0 < distributeXP then
 				print("Adding XP to combat units for Training Exercises Process and/or Militarism Finisher (#units / unitXP): ", countCombatUnits, distributeXP)
@@ -721,7 +712,8 @@ local function OnUnitTakingPromotion(iPlayer, iUnit, promotionID)
 		end
 	end
 end
-GameEvents.UnitTakingPromotion.Add(function(iPlayer, iUnit, promotionID) return HandleError31(OnUnitTakingPromotion, iPlayer, iUnit, promotionID) end)
+local function X_OnUnitTakingPromotion(iPlayer, iUnit, promotionID) return HandleError31(OnUnitTakingPromotion, iPlayer, iUnit, promotionID) end
+GameEvents.UnitTakingPromotion.Add(X_OnUnitTakingPromotion)
 
 --------------------------------------------------------------
 -- Promotion utilities
@@ -802,7 +794,6 @@ UseUnit[GameInfoTypes.UNIT_HUNTERS] = function(iPlayer, unit)
 	else
 		print("!!!! Warning: Hunters built but can't be used; killing unit")
 	end
-	MapModData.bBypassOnCanSaveUnit = true
 	unit:Kill(true, -1)		--remove unit
 end
 
@@ -859,7 +850,6 @@ UseUnit[GameInfoTypes.UNIT_FISHING_BOATS] = function(iPlayer, unit)
 	else
 		print("!!!! Warning: Whaling Boats built but can't be used; killing unit")
 	end
-	MapModData.bBypassOnCanSaveUnit = true
 	unit:Kill(true, -1)		--remove unit
 end
 
@@ -914,42 +904,8 @@ UseUnit[GameInfoTypes.UNIT_WHALING_BOATS] = function(iPlayer, unit)
 	else
 		print("!!!! Warning: Whaling Boats built but can't be used; killing unit")
 	end
-	MapModData.bBypassOnCanSaveUnit = true
 	unit:Kill(true, -1)		--remove unit
 end
-
---[[
-UseAIUnit[GameInfoTypes.UNIT_CARAVAN] = function(iPlayer, unit)
-	--happens when AI route expires
-	--need logic to cance
-	print("UseAIUnit[GameInfoTypes.UNIT_CARAVAN]", iPlayer, unit)
-	local numberOpen, bestCity, bestYield = FindOpenTradeRoute(iPlayer, DOMAIN_LAND, true)
-	if 0 < numberOpen then
-		local plot = unit:GetPlot()
-		local city = plot:GetPlotCity()
-		if city ~= bestCity then
-			--do instant teleport for AI (it's a small ai cheat that prevents log jam of all units going to same city)
-			print("Teleporting AI caravan to better FromCity")
-			plot = bestCity:Plot()
-			unit:SetXY(plot:GetX(), plot:GetY())
-
-			--Game.SelectionListGameNetMessage(GameMessageTypes.GAMEMESSAGE_PUSH_MISSION, MissionTypes.MISSION_CHANGE_TRADE_UNIT_HOME_CITY, g_selectedPlotX, g_selectedPlotY, 0, false, bShift);
-			--unit:PushMission(MissionTypes.MISSION_CHANGE_TRADE_UNIT_HOME_CITY, bestCity:GetX(), bestCity:GetY(), 0, 0, 1)
-		end
-		unit:PushMission(MissionTypes.MISSION_ESTABLISH_TRADE_ROUTE, plot:GetPlotIndex(), 0, 0, 0, 1)		--TradeConnectionType (3rd arg) is 0 for land!!!! must test for sea
-	else
-		print("!!!! WARNING: player has caravan but no open and available trade routes")
-	end
-end
-
-
-
-UseAIUnit[GameInfoTypes.UNIT_CARGO_SHIP] = function(iPlayer, unit)
-	print("UseAIUnit[GameInfoTypes.UNIT_CARGO_SHIP]", iPlayer, unit)
-
-
-end
-]]
 
 
 --sustained promotion system

@@ -5,14 +5,12 @@
 
 print("Loading EaPeople.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- Local Defines
 --------------------------------------------------------------
 local FIRST_SPELL_ID =					FIRST_SPELL_ID
 local HIGHEST_PROMOTION_ID =			HIGHEST_PROMOTION_ID
-local MOD_MEMORY_HALFLIFE =				MOD_MEMORY_HALFLIFE
 
 local EACIV_LJOSALFAR =					GameInfoTypes.EACIV_LJOSALFAR
 local EAMOD_DEVOTION =					GameInfoTypes.EAMOD_DEVOTION
@@ -102,6 +100,12 @@ for promoInfo in GameInfo.UnitPromotions() do
 		nonTransferableGPPromos[numNonTransferableGPPromos] = promoInfo.ID
 	end
 end
+
+local gpPromoPrefixes = {number = 0}
+for row in GameInfo.UnitPromotions_EaPeopleValidPrefixes() do
+	gpPromoPrefixes.number = gpPromoPrefixes.number + 1
+	gpPromoPrefixes[gpPromoPrefixes.number] = row.PromotionPrefix
+end
 --------------------------------------------------------------
 -- Local Functions
 --------------------------------------------------------------
@@ -127,7 +131,7 @@ end
 -- UI Interface
 --------------------------------------------------------------
 local function SetGPModsTable(iPerson)	--used by EaImagePopup for showing GP mods
-	Dprint("SetGPModsTable ", iPerson)
+	--print("SetGPModsTable ", iPerson)
 	local GetGPMod = GetGPMod
 	local TestGPModValid = TestGPModValid
 	local eaPerson = gPeople[iPerson]
@@ -218,11 +222,28 @@ function EaPeopleInit(bNewGame)
 						title = "TXT_KEY_EA_QUEEN",
 						portrait = "Fand_SueMarino_0.70_636x944.dds",
 						eaActionID = -1,
-						gotoEaActionID = -1
+						eaActionData = -1,
+						gotoEaActionID = -1,
+						eaPersonRowID = GameInfoTypes.EAPERSON_FAND
+
 						}
+
+		MakeTableStrict(gPeople[0])
 	end
 
 	for iPerson, eaPerson in pairs(gPeople) do
+		--clean up missing summoned units (v7a patch but won't hurt to leave)
+		local summonedUnits = iPerson > 0 and eaPerson.summonedUnits
+		if summonedUnits then
+			local player = Players[eaPerson.iPlayer]
+			for iUnit in pairs(summonedUnits) do
+				local unit = player:GetUnitByID(iUnit)
+				if not unit then
+					summonedUnits[iUnit] = nil
+				end
+			end
+		end
+
 		local eaPersonRowID = eaPerson.eaPersonRowID
 		if eaPersonRowID then
 			gg_peopleEverLivedByRowID[eaPersonRowID] = true
@@ -242,9 +263,10 @@ end
 
 function MissingEaPersonHasUnit(iPerson, unit)
 	if gDeadPeople[iPerson] then
-		print("!!!! ERROR: Found unit:GetPersonIndex() matching dead person; killing unit; iPerson, iUnit = ", iPerson, unit:GetID())
-		MapModData.bBypassOnCanSaveUnit = true
-		unit:Kill(false, -1)
+		if unit and not unit:IsDelayedDeath() and not unit:IsDead() then
+			print("!!!! ERROR: Found unit:GetPersonIndex() matching dead person; killing unit; iPerson, unit:GetPersonIndex(), iUnit = ", iPerson, unit:GetPersonIndex(), unit:GetID())
+			unit:Kill(false, -1)
+		end
 	else
 		error("unit:GetPersonIndex() did not match any iPerson living or dead: " .. (iPerson or "nil") .. " " .. (unit and unit:GetID() or "nil"))
 	end
@@ -267,7 +289,6 @@ function TestResyncGPIndexes()
 					for i = 1, gpIndexCount do
 						if iPerson == gpIndexes[i] then
 							print("!!!! ERROR: found extra unit with taken PersonIndex; killing unit ", iPerson)
-							MapModData.bBypassOnCanSaveUnit = true
 							unit:Kill(false, -1)
 							bNotRedundant = false
 						end
@@ -306,7 +327,7 @@ function TestResyncGPIndexes()
 			end
 			if not bFound then
 				print("!!!! ERROR: found orphan GP not matched to any map unit, killing; iPlayer, iPerson, class1, class2, subclass = ", eaPerson.iPlayer, iPerson, eaPerson.class1, eaPerson.class2, eaPerson.subclass)
-				KillPerson(eaPerson.iPlayer, iPerson)
+				KillPerson(eaPerson.iPlayer, iPerson, nil, nil, "missing unit in TestResyncGPIndexes")
 			end
 		end
 	end
@@ -384,9 +405,9 @@ function PeoplePerCivTurn(iPlayer)
 			end
 
 			if bDieOfOldAge then
-				KillPerson(iPlayer, iPerson, unit, nil, "OldAge")
+				KillPerson(iPlayer, iPerson, unit, nil, "Old Age")
 			elseif bKill then
-				KillPerson(iPlayer, iPerson, nil, nil, nil)
+				KillPerson(iPlayer, iPerson, nil, nil, "missing unit in PeoplePerCivTurn")
 			else
 
 				--Do passive xp (Ljosalfar only)
@@ -433,12 +454,13 @@ function PeoplePerCivTurn(iPlayer)
 						else
 							DoEaSpell(eaPerson.eaActionID, iPlayer, unit, iPerson)
 						end
+						--gPeople[iPerson] could be nil after this if GP killed doing action
 						print("eaPerson.gotoPlotIndex, .gotoEaActionID = ", eaPerson.gotoPlotIndex, eaPerson.gotoEaActionID)
 					end
 				end
 
 				--Make AI do something if unit on map with movement
-				if eaPerson.iUnit ~= -1 and not bHumanPlayer then
+				if gPeople[iPerson] and eaPerson.iUnit ~= -1 and not bHumanPlayer then
 					unit = player:GetUnitByID(eaPerson.iUnit)
 					local debugLoopCount = 0
 					while unit and unit:GetMoves() > 0 and not unit:IsDead() and not unit:IsDelayedDeath() do					--repeat call since not all actions use movement or all movement
@@ -476,11 +498,9 @@ local function SkipActivePlayerPeople()
 			local iUnit = gPeople[iPerson].iUnit
 			local unit = player:GetUnitByID(iUnit)
 			if unit then
-
 				g_skipActivePlayerPeople[iPerson] = false
 				unit:PopMission()
 				unit:PushMission(MissionTypes.MISSION_SKIP, unit:GetX(), unit:GetY(), 0, 0, 1) --, MissionTypes.MISSION_SKIP, unit:GetPlot(), unit)
-
 			end
 		end
 	end
@@ -509,7 +529,7 @@ function PeopleAfterTurn(iPlayer, bActionInfoPanelCall)
 			local unit = eaPerson.iUnit ~= -1 and player:GetUnitByID(eaPerson.iUnit)
 			if not unit then
 				print("!!!! ERROR: No unit for GP; killing person")
-				KillPerson(iPlayer, iPerson, nil, nil, nil)
+				KillPerson(iPlayer, iPerson, nil, nil, "missing unit in PeopleAfterTurn")
 			else
 				if bHumanPlayer and iPlayer ~= g_iLastPlayerPeopleAfterTurn then	--Human actions run automatically at turn end so that player can interupt
 					if unit:GetMoves() > 0 then
@@ -521,9 +541,14 @@ function PeopleAfterTurn(iPlayer, bActionInfoPanelCall)
 							else
 								bActionSuccess = DoEaSpell(eaActionID, iPlayer, unit, iPerson)
 							end
-							if bActionSuccess and eaPerson.activePlayerEndTurnXP and unit then
-								unit:ChangeExperience(eaPerson.activePlayerEndTurnXP)
-								eaPerson.activePlayerEndTurnXP = nil
+							if bActionSuccess and unit then
+								if eaPerson.activePlayerEndTurnXP ~= 0 then
+									unit:ChangeExperience(eaPerson.activePlayerEndTurnXP)
+									eaPerson.activePlayerEndTurnXP = 0
+								--elseif eaPerson.activePlayerEndTurnManaDivineFavor ~= 0 then
+								--	UseManaOrDivineFavor(iPlayer, iPerson, eaPerson.activePlayerEndTurnManaDivineFavor)
+								--	eaPerson.activePlayerEndTurnManaDivineFavor = 0
+								end
 							end
 
 							if not bActionSuccess and unit and unit:GetMoves() > 0 and not unit:IsDelayedDeath() and not unit:IsDead() then
@@ -560,7 +585,10 @@ function GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, bAsLeader,
 	--for a specific class, use (iPlayer, class, nil, nil)
 	--for a specific subclass, use (iPlayer, nil, subclass, nil)
 	--for a specific person, use (iPlayer, nil, subclass, eaPersonRowID)	--must specify class/subclass/dualClass info!
-	print("GenerateGreatPerson",iPlayer, class, subclass, eaPersonRowID)
+	print("GenerateGreatPerson", iPlayer, class, subclass, eaPersonRowID, bAsLeader, dualClass)
+	if not fullCivs[iPlayer] then
+		error("Attempt to generate great person for non-full civ (alive) player, " .. iPlayer or "nil")
+	end
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
 	if not class and not subclass then	--use random generation
@@ -597,14 +625,15 @@ function GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, bAsLeader,
 	-- !!!!!!!!!!!!!!!!  INIT NEW EaPerson HERE !!!!!!!!!!!!!!!!
 
 	--do eaPerson stuff first!, then init unit after EVERYTHING is ready
-	local iPerson = #gPeople + 1
+	gWorld.personCount = gWorld.personCount + 1
+	local iPerson = gWorld.personCount
 	local eaPerson = {	iPlayer = iPlayer,			
 						iUnit = -1,							-- need this!
 						iUnitJoined = -1,
 						unitTypeID = unitTypeID,
-						subclass = subclass,
+						subclass = subclass or false,
 						class1 = class1,
-						class2 = class2,
+						class2 = class2 or false,
 						level = 1,
 						race = eaPlayer.race,		--takes civ race here; may change when ungenerisized (e.g., Heldeofol takes a subrace)
 						birthYear = Game.GetGameTurn() - 20,
@@ -616,7 +645,39 @@ function GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, bAsLeader,
 						moves = 0,	
 						promotions = {},
 						progress = {},
-						modMemory = {}	}		
+						modMemory = {},	
+						leaderLevel = 0,
+						activePlayerEndTurnXP = 0,
+						--activePlayerEndTurnManaDivineFavor = 0,
+						turnsToComplete = 0,
+						
+						--all below are set elsewhere, but need a non-nil value for strict table function
+						eaPersonRowID = false,
+						name = false,
+						spells = false,
+						templeID = false,
+						predestinedAgeOfDeath = false,
+						deathStayAction = false,
+						aiHasCombatRole = false,
+						learningSpellID = false,
+						x = false,
+						y = false,
+						xp = false,
+						assumedLeadershipTurn = false,
+						title = false,
+						timeStop = false,
+						aiBlacklist = false,
+						bHasTower = false,
+						summonedUnits= false,
+
+						}
+
+	for i = 1, gpPromoPrefixes.number do
+		local promoPrefix = gpPromoPrefixes[i]
+		eaPerson[promoPrefix] = 0					--this makes for much faster access
+	end
+
+	MakeTableStrict(eaPerson)	--this is a strict table: no more keys can be added
 		
 	gPeople[iPerson] = eaPerson
 	RegisterGPActions(iPerson)		--only needs class1, class2 and subclass to work
@@ -647,7 +708,7 @@ function GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, bAsLeader,
 	local iUnit = unit:GetID()
 	eaPerson.iUnit = iUnit
 	UpdateGreatPersonStatsFromUnit(unit, eaPerson)		--x, y, moves, level, xp; fills promotions table
-		
+	--everything below safe to happen after unit init (could happen to GP anytime)
 	if eaPersonRowID or player:IsHuman() then
 		UngenericizePerson(iPlayer, iPerson, eaPersonRowID)
 	else
@@ -671,7 +732,7 @@ function GenerateGreatPerson(iPlayer, class, subclass, eaPersonRowID, bAsLeader,
 end
 --LuaEvents.EaPeopleGenerateGreatPerson.Add(GenerateGreatPerson)
 
-function InitGPUnit(iPlayer, iPerson, x, y, convertUnit, unitTypeID, invisibilityID, morale)	--only first 4 args required
+function InitGPUnit(iPlayer, iPerson, x, y, convertUnit, unitTypeID, invisibilityID, morale, bResurection)	--only first 4 args required
 	local player = Players[iPlayer]
 	local eaPerson = gPeople[iPerson]
 	unitTypeID = unitTypeID or eaPerson.unitTypeID		--default if nil
@@ -691,8 +752,14 @@ function InitGPUnit(iPlayer, iPerson, x, y, convertUnit, unitTypeID, invisibilit
 		for i = 1, numNonTransferableGPPromos do
 			convertUnit:SetHasPromotion(nonTransferableGPPromos[i] , false)
 		end
-		MapModData.bBypassOnCanSaveUnit = true
 		unit:Convert(convertUnit, false)
+	elseif bResurection then
+		unit:SetLevel(eaPerson.level)
+		unit:SetExperience(eaPerson.xp)
+		local promotions = eaPerson.promotions
+		for promotionID = 0, HIGHEST_PROMOTION_ID do
+			unit:SetHasPromotion(promotionID, promotions[promotionID] and true or false)
+		end 
 	end
 	return unit
 end
@@ -702,10 +769,6 @@ function UpdateGreatPersonStatsFromUnit(unit, eaPerson)		--info we may need if u
 	eaPerson.y = unit:GetY()
 	eaPerson.level = unit:GetLevel()
 	eaPerson.xp = unit:GetExperience()
-
-	--v4 hotfix c patch for save compatibility; TO DO: Remove
-	eaPerson.promotions = eaPerson.promotions or {}
-
 	local promotions = eaPerson.promotions
 	for promotionID = 0, HIGHEST_PROMOTION_ID do
 		if unit:IsHasPromotion(promotionID) then
@@ -982,8 +1045,8 @@ function UpdateLeaderEffects(iPlayer)
 	local leaderScience = 0
 	local leaderCulture = 0
 	local leaderManaOrFavor = 0
-	local leaderLandXP
-	local leaderSeaXP
+	local leaderLandXP = 0
+	local leaderSeaXP = 0
 
 
 	local iLeader = eaPlayer.leaderEaPersonIndex
@@ -1020,7 +1083,7 @@ function UpdateLeaderEffects(iPlayer)
 	
 	end
 
-	if class2 then 	--nil unless dual-class
+	if class2 then 	--false unless dual-class
 		mod = mod / 2
 	end
 
@@ -1058,28 +1121,14 @@ function UpdateLeaderEffects(iPlayer)
 		end
 	end
 
-	if player:GetLeaderYieldBoost(YIELD_PRODUCTION) ~= leaderProduction then
-		player:SetLeaderYieldBoost(YIELD_PRODUCTION, leaderProduction)
-	end
-	if player:GetLeaderYieldBoost(YIELD_GOLD) ~= leaderGold then
-		player:SetLeaderYieldBoost(YIELD_GOLD, leaderGold)
-	end
-	if player:GetLeaderYieldBoost(YIELD_SCIENCE) ~= leaderScience then
-		player:SetLeaderYieldBoost(YIELD_SCIENCE, leaderScience)
-	end
-	if player:GetLeaderYieldBoost(YIELD_CULTURE) ~= leaderCulture then
-		player:SetLeaderYieldBoost(YIELD_CULTURE, leaderCulture)
-	end
-	if player:GetLeaderYieldBoost(YIELD_FAITH) ~= leaderManaOrFavor then
-		player:SetLeaderYieldBoost(YIELD_FAITH, leaderManaOrFavor)
-	end
+	--handled in dll
+	player:SetLeaderYieldBoost(YIELD_PRODUCTION, leaderProduction)
+	player:SetLeaderYieldBoost(YIELD_GOLD, leaderGold)
+	player:SetLeaderYieldBoost(YIELD_SCIENCE, leaderScience)
+	player:SetLeaderYieldBoost(YIELD_CULTURE, leaderCulture)
+	player:SetLeaderYieldBoost(YIELD_FAITH, leaderManaOrFavor)
 
-
-	--eaPlayer.leaderProduction = leaderProduction	--these are nil when not needed
-	--eaPlayer.leaderGold = leaderGold
-	--eaPlayer.leaderScience = leaderScience
-	--eaPlayer.leaderCulture = leaderCulture
-	--eaPlayer.leaderManaOrFavor = leaderManaOrFavor
+	--handled in EaYield.lua
 	eaPlayer.leaderLandXP = leaderLandXP
 	eaPlayer.leaderSeaXP = leaderSeaXP
 
@@ -1103,21 +1152,8 @@ function RemoveLeaderEffects(iPlayer)
 	player:SetLeaderYieldBoost(YIELD_FAITH, 0)
 
 	local eaPlayer = gPlayers[iPlayer]
-	eaPlayer.leaderLandXP = nil
-	eaPlayer.leaderSeaXP = nil
-end
-
-function RemoveResidentEffects(city)	--if replaced or walks away
-
-	city:SetCityResidentYieldBoost(YIELD_PRODUCTION, 0)
-	city:SetCityResidentYieldBoost(YIELD_GOLD, 0)
-	city:SetCityResidentYieldBoost(YIELD_SCIENCE, 0)
-	city:SetCityResidentYieldBoost(YIELD_CULTURE, 0)
-	city:SetCityResidentYieldBoost(YIELD_FAITH, 0)
-
-	local eaCity = gCities[city:Plot():GetPlotIndex()]
-	eaCity.residentLandXP = nil
-	eaCity.residentSeaXP = nil
+	eaPlayer.leaderLandXP = 0
+	eaPlayer.leaderSeaXP = 0
 end
 
 
@@ -1125,7 +1161,8 @@ end
 -- GP Modifier Functions
 --------------------------------------------------------------
 
-local subclassModLevelModifier = {
+
+local subclassModLevelModifier = {							--TO DO: Move to table
 	Witch = {		EAMOD_DIVINATION =		0.25,
 					EAMOD_ENCHANTMENT =		0.25,
 					EAMOD_ABJURATION =		0.1,
@@ -1147,7 +1184,25 @@ local subclassModLevelModifier = {
 					EAMOD_NECROMANCY =		0.2,
 					EAMOD_ILLUSION =		0.2		},
 	Necromancer = {	EAMOD_NECROMANCY =		0.5		},
-	Illusionist = {	EAMOD_ILLUSION =		0.5		}
+	Illusionist = {	EAMOD_ILLUSION =		0.5		},
+	Mage = {		EAMOD_DIVINATION =		0.1,
+					EAMOD_ENCHANTMENT =		0.1,
+					EAMOD_ABJURATION =		0.1,
+					EAMOD_EVOCATION =		0.1,
+					EAMOD_TRANSMUTATION =	0.1,
+					EAMOD_CONJURATION =		0.1,
+					EAMOD_NECROMANCY =		0.1,
+					EAMOD_ILLUSION =		0.1,
+					EAMOD_SCHOLARSHIP =		0.1		},
+	Archmage = {	EAMOD_DIVINATION =		0.2,
+					EAMOD_ENCHANTMENT =		0.2,
+					EAMOD_ABJURATION =		0.2,
+					EAMOD_EVOCATION =		0.2,
+					EAMOD_TRANSMUTATION =	0.2,
+					EAMOD_CONJURATION =		0.2,
+					EAMOD_NECROMANCY =		0.2,
+					EAMOD_ILLUSION =		0.2,
+					EAMOD_SCHOLARSHIP =		0.2		}
 }
 
 local subclassModModifier = {
@@ -1158,6 +1213,19 @@ local subclassModModifier = {
 					EAMOD_CONJURATION =		-2,
 					EAMOD_NECROMANCY =		-2		}
 }
+
+local modPolicyModifier = {
+	EAMOD_BARDING =			{[GameInfoTypes.POLICY_BARDING] = 8},
+	EAMOD_DIVINATION =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_ENCHANTMENT =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_ABJURATION =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_EVOCATION =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_TRANSMUTATION =	{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_CONJURATION =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_NECROMANCY =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8},
+	EAMOD_ILLUSION =		{[GameInfoTypes.POLICY_ARCANA_PRIMUS] = 8}
+}
+
 
 local cachedGPMod = {}
 
@@ -1196,14 +1264,14 @@ function GetGPMod(iPerson, modType1, modType2)
 
 	local promos
 	if modType1 == "EAMOD_LEADERSHIP" then
-		promos = eaPerson.leaderLevel or 0		--counted as if promo level (so biggest bump early)
+		promos = eaPerson.leaderLevel		--counted as if promo level (so biggest bump early)
 	else
 		promos = GetHighestPromotionLevel(modsPromotionTable[modType1], nil, iPerson)
 	end
 
 	if modType2 then
 		if modType2 == "EAMOD_LEADERSHIP" then
-			promos = promos + (eaPerson.leaderLevel or 0)
+			promos = promos + eaPerson.leaderLevel
 		else
 			promos = promos + GetHighestPromotionLevel(modsPromotionTable[modType2], nil, iPerson)
 		end
@@ -1232,7 +1300,26 @@ function GetGPMod(iPerson, modType1, modType2)
 
 	--age class (TO DO)
 
+	--Policies
+	if modPolicyModifier[modType1] then
+		local player = Players[eaPerson.iPlayer]
+		for policyID, mod in pairs(modPolicyModifier[modType1]) do
+			if player:HasPolicy(policyID) then
+				totalMod = totalMod + mod
+			end
+		end
+	end
 
+	if modType2 and modPolicyModifier[modType2] then
+		local player = Players[eaPerson.iPlayer]
+		for policyID, mod in pairs(modPolicyModifier[modType2]) do
+			if player:HasPolicy(policyID) then
+				totalMod = totalMod + mod
+			end
+		end
+	end
+
+	--Epics
 	if modType1 == "EAMOD_LEADERSHIP" or modType2 == "EAMOD_LEADERSHIP" then
 		if gEpics[EA_EPIC_GRIMNISMAL] and gEpics[EA_EPIC_GRIMNISMAL].iPlayer == eaPerson.iPlayer then
 			totalMod = totalMod * (100 + gEpics[EA_EPIC_GRIMNISMAL].mod) / 100
@@ -1245,7 +1332,7 @@ function GetGPMod(iPerson, modType1, modType2)
 	return totalMod
 end
 
-function SetTowerMods(iPlayer, iPerson)
+function SetTowerMods(iPlayer, iPerson)						--tower mod is from caster; caster gets 50% benefit of tower mods
 	local tower = gWonders[EA_WONDER_ARCANE_TOWER][iPerson]
 	if not tower then return end
 	print("SetTowerMods ", iPlayer, iPerson)
@@ -1258,15 +1345,15 @@ function SetTowerMods(iPlayer, iPerson)
 	local modSum = 0
 	local bestCasterMod, bestTowerMod = 0, 0
 	for i = maxModID - 7, maxModID do
-		local casterMod = GetGPMod(iPerson, modTypes[i], nil)
+		local halfCasterMod = floor(GetGPMod(iPerson, modTypes[i], nil) / 2)
 		local towerMod = tower[i]
-		if bestCasterMod < casterMod then
-			bestCasterMod = casterMod
+		if bestCasterMod < halfCasterMod then
+			bestCasterMod = halfCasterMod
 		end
 		if bestTowerMod < towerMod then
 			bestTowerMod = towerMod
 		end
-		local newMod = towerMod < casterMod and casterMod or towerMod
+		local newMod = towerMod < halfCasterMod and halfCasterMod or towerMod
 		tower[i] = newMod
 		modSum = modSum + newMod
 	end
@@ -1297,7 +1384,7 @@ end
 
 
 function UnJoinGP(iPlayer, eaPerson)
-	Dprint("UnJoinGP ", iPlayer, eaPerson)
+	--print("UnJoinGP ", iPlayer, eaPerson)
 	eaPerson.iUnitJoined = -1
 
 	--Does nothing now
@@ -1322,7 +1409,7 @@ function AIInturruptGPsForLeadershipOpportunity(iPlayer)	--TO DO: Make this bett
 				end
 			else
 				print("!!!! ERROR: No unit for GP; killing person")
-				KillPerson(iPlayer, iPerson, nil, nil, nil)
+				KillPerson(iPlayer, iPerson, nil, nil, "missing unit in AIInturruptGPsForLeadershipOpportunity")
 				--error("No unit for GP")
 			end
 		end
@@ -1332,12 +1419,52 @@ function AIInturruptGPsForLeadershipOpportunity(iPlayer)	--TO DO: Make this bett
 	end
 end
 
+function ReviveLich(iPerson)		--assumes old unit was killed or being killed
+	print("ReviveLich ", iPerson)
+	--for now, revive somewhere; TO DO: We want an eaPerson to be able to hang out nowhere with iUnit = -1 until conditions are right for revival (e.g., player owns lich's tower
+	local eaPerson = gPeople[iPerson]
+	local iPlayer = eaPerson.iPlayer
+	local player = Players[iPlayer]
+
+	--find appropriate plot
+	local iPlot
+	local tower = gWonders[EA_WONDER_ARCANE_TOWER][iPerson]
+	if tower then
+		iPlot = tower.iPlot
+	elseif eaPerson.templeID then
+		local temple = gWonders[eaPerson.templeID]
+		iPlot = temple.iPlot
+	end
+	if not iPlot then
+		local capital = player:GetCapitalCity()
+		if capital then
+			iPlot = capital:Plot():GetPlotIndex()
+		end
+	end
+	if iPlot then
+		local x, y = GetXYFromPlotIndex(iPlot)
+		local unit = InitGPUnit(iPlayer, iPerson, x, y, nil, nil, nil, nil, true)
+		if unit then
+			if unit:GetPlot():GetOwner() ~= iPlayer then
+				unit:JumpToNearestValidPlot()		--only kicks out of tower, but the idea is clear
+			end
+			UseManaOrDivineFavor(iPlayer, nil, unit:GetLevel() * 10)	--burns mana but unit doesn't get xp for dying
+			print("Lich was revived!")
+			return true
+		end
+	end
+	print("Failed to revive Lich for some reason")
+	return false
+end
+
+
+
 function KillPerson(iPlayer, iPerson, unit, iKillerPlayer, deathType)
 	--Important! Supply unit if unit needs to be killed! iKillerPlayer is optional but only matters only if unit supplied
-	print("KillPerson(iPlayer, iPerson, unit, iKillerPlayer, deathType) ", iPlayer, iPerson, unit, iKillerPlayer, deathType)
+	print("KillPerson ", iPlayer, iPerson, unit, iKillerPlayer, deathType)
+	local eaPerson = gPeople[iPerson]
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
-	local eaPerson = gPeople[iPerson]
 
 	--debug info
 	if unit then
@@ -1347,16 +1474,50 @@ function KillPerson(iPlayer, iPerson, unit, iKillerPlayer, deathType)
 	end
 	print("eaPerson.iPlayer = ", eaPerson.iPlayer)
 	print("eaPerson.iUnit = ", eaPerson.iUnit)
-	print("eaPerson.unitTypeID = ", eaPerson.unitTypeID, GameInfo.Units[eaPerson.unitTypeID].Type)
+	print("eaPerson.unitTypeID = ", eaPerson.unitTypeID, eaPerson.unitTypeID and GameInfo.Units[eaPerson.unitTypeID].Type or nil)
 	print("subclass = ", eaPerson.subclass)
 	print("class1 = ", eaPerson.class1)
 	print("class2 = ", eaPerson.class2)
 	print("race = ", eaPerson.race)
 	print("name = ", eaPerson.name)
-	
+
+	--remove unit or make sure it is safely being removed
+	if unit then
+		if not unit:IsDelayedDeath() and not unit:IsDead() then
+			if unit:GetPersonIndex() == iPerson then
+				unit:Kill(true, iKillerPlayer or -1)
+			else
+				print("!!!! ERROR: unit doesn't have correct GetPersonIndex for KillPerson ", iPerson, unit:GetPersonIndex())
+			end
+		end
+	else	--don't trust call; make sure there is no unit!
+		for iLoopPlayer = 0, BARB_PLAYER_INDEX do
+			local loopPlayer = Players[iLoopPlayer]
+			if loopPlayer:IsAlive() then
+				for loopUnit in loopPlayer:Units() do
+					local iLoopPerson = loopUnit:GetPersonIndex()
+					if iLoopPerson == iPerson then
+						if not loopUnit:IsDelayedDeath() and not loopUnit:IsDead() then
+							loopUnit:Kill(true, iKillerPlayer or -1)
+						end						
+					end
+				end
+			end
+		end
+	end
+
+	--Lich?
+	if eaPerson.unitTypeID == UNIT_LICH then
+		if ReviveLich(iPerson) then
+			return
+		end
+	end
+
 	--notification
 	if iPlayer == g_iActivePlayer then
-		LuaEvents.EaImagePopup({type = "PersonDeath", id = iPerson, sound = "AS2D_EVENT_NOTIFICATION_BAD"})	--TO DO! find unit killed sound
+		if deathType ~= "Renounce Maleficium" then
+			LuaEvents.EaImagePopup({type = "PersonDeath", id = iPerson, sound = "AS2D_EVENT_NOTIFICATION_BAD"})	--TO DO! find unit killed sound
+		end
 	end
 
 	--housekeeping
@@ -1370,35 +1531,7 @@ function KillPerson(iPlayer, iPerson, unit, iKillerPlayer, deathType)
 	end
 
 	--leader
-	if eaPlayer.leaderEaPersonIndex == iPerson then
-		print("Person was leader; changing player leader to No Leader")
-		eaPlayer.leaderEaPersonIndex = -1
-		if eaPlayer.race == GameInfoTypes.EARACE_MAN then
-			player:ChangeLeaderType(GameInfoTypes.LEADER_NO_LDR_MAN)
-		elseif eaPlayer.race == GameInfoTypes.EARACE_SIDHE then
-			player:ChangeLeaderType(GameInfoTypes.LEADER_NO_LDR_SIDHE)
-		elseif eaPlayer.race == GameInfoTypes.EARACE_HELDEOFOL then
-			player:ChangeLeaderType(GameInfoTypes.LEADER_NO_LDR_HELDEOFOL)
-		end
-		PreGame.SetLeaderName(iPlayer, "TXT_KEY_EA_NO_LEADER")
-
-		RemoveLeaderEffects(iPlayer)
-		UpdateGlobalYields(iPlayer)
-		if not player:IsHuman() then
-			AIInturruptGPsForLeadershipOpportunity(iPlayer)
-		end
-	end
-
-	--remove unit if supplied
-	if unit then
-		MapModData.bBypassOnCanSaveUnit = true
-		unit:Kill(true, iKillerPlayer)
-	end
-
-	--debug: test all units to make sure no one else has this person index
-
-
-	--move person info we may want over to gDeadPeople; keep: eaPersonRowID, subclass, class1, class1, name, level
+	local bWasLeader = eaPlayer.leaderEaPersonIndex == iPerson
 
 	--creat dead person table and transfer data we may need later (not table pointers! they break TableSaverLoader!)
 	local eaDeadPerson = {}
@@ -1431,8 +1564,30 @@ function KillPerson(iPlayer, iPerson, unit, iKillerPlayer, deathType)
 		eaDeadPerson.promotions[k] = v
 	end
 
-	gDeadPeople[#gDeadPeople + 1] = eaDeadPerson
+	gDeadPeople[iPerson] = eaDeadPerson
 	gPeople[iPerson] = nil
+	print("eaPerson has been removed")
+
+	--after death stuff
+	if bWasLeader then
+		print("Person was leader; changing player leader to No Leader")
+		eaPlayer.leaderEaPersonIndex = -1
+		if eaPlayer.race == GameInfoTypes.EARACE_MAN then
+			player:ChangeLeaderType(GameInfoTypes.LEADER_NO_LDR_MAN)
+		elseif eaPlayer.race == GameInfoTypes.EARACE_SIDHE then
+			player:ChangeLeaderType(GameInfoTypes.LEADER_NO_LDR_SIDHE)
+		elseif eaPlayer.race == GameInfoTypes.EARACE_HELDEOFOL then
+			player:ChangeLeaderType(GameInfoTypes.LEADER_NO_LDR_HELDEOFOL)
+		end
+		PreGame.SetLeaderName(iPlayer, "TXT_KEY_EA_NO_LEADER")
+
+		RemoveLeaderEffects(iPlayer)
+		UpdateGlobalYields(iPlayer)
+		if not player:IsHuman() then
+			AIInturruptGPsForLeadershipOpportunity(iPlayer)
+		end
+	end
+
 
 	print("finished KillPerson")
 end

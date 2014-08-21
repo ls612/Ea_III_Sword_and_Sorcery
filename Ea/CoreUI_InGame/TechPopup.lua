@@ -56,6 +56,9 @@ function TechSelected( eTech, iValue)
 	   	Network.SendResearch(eTech, iValue, -1, false); -- iValue is number of free (non-espionage) techs
 	end
 	ClosePopup();
+	--Paz add
+	LuaEvents.EaYieldsUpdateCityYields(playerID, nil, "Science", false)
+	--end Paz add
 end
 
 -------------------------------------------------
@@ -96,8 +99,8 @@ function OnDisplay(popupInfo)
   	end
 
 	--Paz add
-	LuaEvents.EaTechsResetTechCostMods(Game.GetActivePlayer())
-	print("after EaTechsResetTechCostMods from OnDisplay")
+	LuaEvents.EaTechsResetTechCosts(Game.GetActivePlayer())
+	print("after EaTechsResetTechCosts from OnDisplay")
 	--end Paz add
   	
 	OnTechPanelUpdated();

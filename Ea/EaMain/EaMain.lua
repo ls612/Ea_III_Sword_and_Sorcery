@@ -3,19 +3,25 @@
 -- DateCreated: 8/16/2011 7:17:51 PM
 --------------------------------------------------------------
 
-local HOTFIX = "i"		--forgot f so don't yell at testers
+local HOTFIX = "a"
+local DLL_COMMIT = "d10942b"
+local DLL_DEBUG_BUILD = false
 local EA_MEDIA_PACK_MIN_VERSION = 5
-
-
 
 -------------------------------------------------------------------------------------------------------
 
 include("EaErrorHandler.lua")
 
-if not GameDefines.EA_DLL_VERSION then
-	error("Mod could not determine modded dll version. Is this a Mac? (Macs can't play dll mods)")
-end
+include("EaDefines.lua")	
+include("strict.lua")	--all globals must be declared before this except functions in main body or by using Globals
 
+-------------------------------------------------------------------------------------------------------
+-- Load printout
+-------------------------------------------------------------------------------------------------------
+
+if not GameDefines.EA_DLL_VERSION then
+	HandleError10(function() error("Mod does not see modded dll for some reason.") end)
+end
 
 print("Loading EaMain.lua...")
 print("")
@@ -35,13 +41,17 @@ for key, modInfo in pairs(unsortedInstalledMods) do
 	end
 end
 print("")
-print("hotfix: " .. HOTFIX)
+print("hotfix          : " .. HOTFIX)
+print("dll commit      : " .. DLL_COMMIT)
+print("dll debug build : " .. tostring(DLL_DEBUG_BUILD))
 print("****************************************************************")
 print("")
 
 -------------------------------------------------------------------------------------------------------
 -- Includes
 -------------------------------------------------------------------------------------------------------
+--First, init some globals used by foreign code for strict.lua
+Globals("RiverManager", "River", "RiverSegmentManager", "RiverSegment")
 
 --Utilities that don't need gT data
 include("EaPlotUtils.lua")	
@@ -53,9 +63,9 @@ include("EaMiscUtils.lua")
 include("RiverConnections.lua")
 
 --Defines and initialization
-include("EaDefines.lua")			--1st after utils (before any files that reference mod specific data)
-include("TableSaverLoader.lua")		--2rd
-include("EaInit.lua")				--3rd
+	
+include("TableSaverLoader.lua")	
+include("EaInit.lua")			
 include("_Debug.lua")
 
 --Helpers
@@ -101,7 +111,6 @@ include("EaDebugUtils.lua")
 include("EaTextUtils.lua")
 
 local print = ENABLE_PRINT and print or function() end	--set in EaDefines.lua
-local Dprint = DEBUG_PRINT and print or function() end	
 
 -------------------------------------------------------------------------------------------------------
 -- File Locals
@@ -115,10 +124,9 @@ local playerType = MapModData.playerType
 local fullCivs = MapModData.fullCivs
 
 --localized game and library functions
-local Clock = os.clock
+local clock = os.clock
 
 --localized global functions
-local HandleError10 =				HandleError10
 local AICivsPerGameTurn =			AICivsPerGameTurn
 local AIMercenaryPerGameTurn =		AIMercenaryPerGameTurn
 local PlotsPerTurn =				PlotsPerTurn
@@ -135,6 +143,7 @@ local PeoplePerCivTurn =			PeoplePerCivTurn
 local UpdateGlobalYields =			UpdateGlobalYields
 local UpdateCityYields =			UpdateCityYields
 local PeopleAfterTurn =				PeopleAfterTurn
+local HandleError10 =				HandleError10
 
 --shared
 local MapModData = MapModData
@@ -143,11 +152,12 @@ local MapModData = MapModData
 local g_lastPlayerID = -1
 local g_lastTurn = 0		--this causes per turn functions to skip on turn 0 (so no animals)
 local g_bHumanOrFirstInAutoplayTurn = false
-local oldTime = Clock()
+local oldTime = clock()
 local startHuman = 0
 local timerHuman = 0
 local timerTurn = 0
 local timerPlotsPerTurn = 0
+local timerAllPerTurnFunctionsStart = 0
 local timerAllPerTurnFunctions = 0
 local bInitialized = false
 
@@ -162,7 +172,6 @@ local function DebugHidden(iPlayer)
 	local player = Players[iPlayer]
 	for unit in player:Units() do
 		print("!!!! ERROR: Hidden civ got a unit; gifted by AI? iPlayer/iUnit = ", iPlayer, unit:GetID())
-		MapModData.bBypassOnCanSaveUnit = true
 		unit:Kill(true, -1)
 	end
 end
@@ -173,7 +182,7 @@ local function PrintGameTurn(iPlayer, gameTurn)
 		print("")
 		print("------------------------------------------------------------------------------------------------------")
 		print("----------------------------------------- NEW GAME TURN: " .. gameTurn .. " ------------------------------------------")
-		local newTime = Clock()
+		local newTime = clock()
 		timerTurn = newTime - oldTime
 		oldTime = newTime
 		print("Lua memory (Mb) = ", collectgarbage("count") / 1000)
@@ -223,7 +232,7 @@ local function AfterEveryPlayerTurn(iPlayer)
 		end
 	end
 	if g_bHumanOrFirstInAutoplayTurn then
-		timerHuman = Clock() - startHuman
+		timerHuman = clock() - startHuman
 		g_bHumanOrFirstInAutoplayTurn = false
 	end
 end
@@ -240,7 +249,7 @@ local function OnPlayerDoTurn(iPlayer)	-- Runs at begining of turn for all livin
 	local gameTurn = Game.GetGameTurn()
 	if gameTurn == 0 then return end
 
-	timerAllPerTurnFunctionsStart = Clock()
+	timerAllPerTurnFunctionsStart = clock()
 	local player = Players[iPlayer]
 
 	if g_lastTurn < gameTurn then
@@ -261,17 +270,22 @@ local function OnPlayerDoTurn(iPlayer)	-- Runs at begining of turn for all livin
 		EaArmageddonPerTurn()
 		AICivsPerGameTurn()
 		AIMercenaryPerGameTurn()
-		local startPlotsPerTurn = Clock()
+		local startPlotsPerTurn = clock()
 		PlotsPerTurn()
-		timerPlotsPerTurn = Clock() - startPlotsPerTurn
+		timerPlotsPerTurn = clock() - startPlotsPerTurn
 		BarbSpawnPerTurn()
 		AnimalsPerTurn()
 		ReligionPerGameTurn()
+
+		if gameTurn % 50 == 0 then
+			PrintStrictLuaErrors()
+		end
+
 	end
 
 	g_bHumanOrFirstInAutoplayTurn = g_bHumanOrFirstInAutoplayTurn or iPlayer == g_iActivePlayer
 
-	local startOtherPerTurn = Clock()
+	local startOtherPerTurn = clock()
 	PrintNewTurnForPlayer(iPlayer, gameTurn)
 
 	-------------------------------------------------------------------------------------------------------
@@ -279,7 +293,6 @@ local function OnPlayerDoTurn(iPlayer)	-- Runs at begining of turn for all livin
 	-------------------------------------------------------------------------------------------------------
 	if playerType[iPlayer] == "FullCiv" then
 		--Full civs
-		local eaPlayer = gPlayers[iPlayer]
 		UnitPerCivTurn(iPlayer)						--must be before PeoplePerCivTurn(iPlayer)
 		UpdateAllArtifacts()
 		WondersPerCivTurn(iPlayer)
@@ -292,7 +305,7 @@ local function OnPlayerDoTurn(iPlayer)	-- Runs at begining of turn for all livin
 			AICivRun(iPlayer)
 			AIMercenaryPerCivTurn(iPlayer)
 		end
-		if not eaPlayer.eaCivNameID then
+		if not gPlayers[iPlayer].eaCivNameID then
 			TestAllCivNamingConditions(iPlayer)
 		end
 		DiploPerCivTurn(iPlayer)
@@ -325,12 +338,13 @@ local function OnPlayerDoTurn(iPlayer)	-- Runs at begining of turn for all livin
 		--if gameTurn % g_autoSaveFreq == 0 then
 		--	EaAutoSave(gameTurn)
 		--end
-		startHuman = Clock()
+		startHuman = clock()
 	end
-	timerAllPerTurnFunctions = timerAllPerTurnFunctions - timerAllPerTurnFunctionsStart + Clock()
+	timerAllPerTurnFunctions = timerAllPerTurnFunctions - timerAllPerTurnFunctionsStart + clock()
 
 end
-GameEvents.PlayerDoTurn.Add(function(iPlayer) return HandleError10(OnPlayerDoTurn, iPlayer) end)
+local function X_OnPlayerDoTurn(iPlayer) return HandleError10(OnPlayerDoTurn, iPlayer) end
+GameEvents.PlayerDoTurn.Add(X_OnPlayerDoTurn)
 
 ----------------------------------------------------------------
 --Save 
@@ -340,7 +354,8 @@ local function OnGameSave()
 	print("OnGameSave ")
 	TableSave(gT, "Ea")
 end
-GameEvents.GameSave.Add(OnGameSave)
+local function X_OnGameSave() return HandleError10(OnGameSave) end
+GameEvents.GameSave.Add(X_OnGameSave)
 
 ----------------------------------------------------------------
 -- Autoplay
@@ -399,5 +414,6 @@ Events.GameplaySetActivePlayer.Add(OnActivePlayerChanged)
 ----------------------------------------------------------------
 -- Init
 ----------------------------------------------------------------
+local OnLoadEaMain = OnLoadEaMain
 HandleError10(OnLoadEaMain)		--in EaInit.lua
 bInitialized = true

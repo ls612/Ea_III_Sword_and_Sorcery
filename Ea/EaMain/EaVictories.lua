@@ -4,12 +4,23 @@
 --------------------------------------------------------------
 
 
+--------------------------------------------------------------
+-- File Locals
+--------------------------------------------------------------
 
-local fullCivs =			MapModData.fullCivs
+--constants
+local RELIGION_ANRA =				GameInfoTypes.RELIGION_ANRA
+local POLICY_BRANCH_ANTI_THEISM =	GameInfoTypes.POLICY_BRANCH_ANTI_THEISM
 
-local floor =				math.floor
-local sort =				table.sort
+--global tables
+local fullCivs =					MapModData.fullCivs
+local gg_eaTechClass =				gg_eaTechClass
 
+--functions
+local floor =						math.floor
+local sort =						table.sort
+
+--file control
 local g_playerScores = {}
 local g_sortedScores = {}
 
@@ -36,7 +47,7 @@ GameEvents.GameCoreTestVictory.Add(OnGameCoreTestVictory)
 
 
 function TestUpdateVictory(iPlayer)
-	print("VictoryPerCivTurn ", iPlayer)
+	print("TestUpdateVictory ", iPlayer)
 	if Game.GetWinner() ~= -1 then
 		print("Someone already won; no longer testing victory conditions or adjusting mod scores")
 		if Game.GetAIAutoPlay() > 1 then
@@ -49,7 +60,7 @@ function TestUpdateVictory(iPlayer)
 	local eaPlayer = gPlayers[iPlayer]
 	if not eaPlayer then		--iPlayer might be autoplay observer, so pick anyone alive and do test
 		for iLoopPlayer, eaLoopPlayer in pairs(fullCivs) do
-			local loopPlayer = Players[iPlayer]
+			local loopPlayer = Players[iLoopPlayer]
 			if loopPlayer and loopPlayer:IsAlive() then
 				iPlayer, eaPlayer, player = iLoopPlayer, eaLoopPlayer, loopPlayer
 				break
@@ -166,4 +177,6 @@ function UpdateFayScore(iPlayer)
 
 	player:ChangeScoreFromScenario1(fayScore - player:GetScore())
 end
+
+
 

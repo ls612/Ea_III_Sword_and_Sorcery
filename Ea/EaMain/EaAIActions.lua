@@ -21,7 +21,6 @@ local TRAVEL_TURNS_WITHIN_AREA = 4
 --constants
 local EA_ACTION_GO_TO_PLOT =				GameInfoTypes.EA_ACTION_GO_TO_PLOT		-- always = 0
 local EA_ACTION_TAKE_LEADERSHIP =			GameInfoTypes.EA_ACTION_TAKE_LEADERSHIP
---local EA_ACTION_TAKE_RESIDENCE =			GameInfoTypes.EA_ACTION_TAKE_RESIDENCE
 local EA_ACTION_LAND_TRADE_ROUTE =			GameInfoTypes.EA_ACTION_LAND_TRADE_ROUTE
 local EA_ACTION_SEA_TRADE_ROUTE =			GameInfoTypes.EA_ACTION_SEA_TRADE_ROUTE
 local BUILDING_LIBRARY =					GameInfoTypes.BUILDING_LIBRARY
@@ -51,6 +50,7 @@ local LAST_SPELL_ID =						LAST_SPELL_ID
 local fullCivs =							MapModData.fullCivs
 local realCivs =							MapModData.realCivs
 local gpRegisteredActions =					MapModData.gpRegisteredActions
+local gWorld =								gWorld
 local gPlayers =							gPlayers
 local gPeople =								gPeople
 local Players =								Players
@@ -58,6 +58,8 @@ local Teams =								Teams
 local gg_aiOptionValues =					gg_aiOptionValues	--communicates with EaAction.lua
 local gg_unitClusters =						gg_unitClusters	--values set in EaUnitsAI.lua; used here for GP threat assesment if GP has combat role
 local gg_playerPlotActionTargeted =			gg_playerPlotActionTargeted
+local gg_cachedMapPlots =					gg_cachedMapPlots
+
 
 --localized functions
 local TestEaAction =						TestEaAction
@@ -66,9 +68,9 @@ local DoEaAction =							DoEaAction
 local TestEaSpell =							TestEaSpell
 local TestEaSpellTarget =					TestEaSpellTarget
 local DoEaSpell =							DoEaSpell
-local PlotDistance =							Map.PlotDistance
+local PlotDistance =						Map.PlotDistance
 local GetPlotFromXY =						Map.GetPlot
-local Format =								string.format
+local format =								string.format
 local GetXYFromPlotIndex =					GetXYFromPlotIndex
 local Rand =								Map.Rand
 
@@ -119,10 +121,8 @@ end
 function AIRecalculateNumTradeRoutesTargeted(iPlayer)
 	local player = Players[iPlayer]
 	local eaPlayer = gPlayers[iPlayer]
-	if player:IsHuman() then
-		eaPlayer.aiNumTradeRoutesTargeted = nil
-	else
-		eaPlayer.aiNumTradeRoutesTargeted = 0
+	eaPlayer.aiNumTradeRoutesTargeted = 0
+	if not player:IsHuman() then
 		for iPerson, eaPerson in pairs(gPeople) do
 			if eaPerson.iPlayer == iPlayer then
 				if eaPerson.eaActionID == EA_ACTION_LAND_TRADE_ROUTE or eaPerson.gotoEaActionID == EA_ACTION_LAND_TRADE_ROUTE or eaPerson.eaActionID == EA_ACTION_SEA_TRADE_ROUTE or eaPerson.gotoEaActionID == EA_ACTION_SEA_TRADE_ROUTE then
@@ -131,6 +131,14 @@ function AIRecalculateNumTradeRoutesTargeted(iPlayer)
 			end
 		end
 	end
+end
+
+---------------------------------------------------------------
+-- Init
+---------------------------------------------------------------
+
+function EaAIActionsInit(bNewGame)
+
 end
 
 ---------------------------------------------------------------
@@ -431,6 +439,19 @@ AITarget.AllCities = function()
 	end
 end
 
+
+AITarget.Purge = function()
+	--really all cities but save time by checking main conditions here
+	if gWorld.bAnraHolyCityExists == false and not g_eaPlayer.bIsFallen and not g_eaPlayer.bRenouncedMaleficium then
+		for iLoopPlayer in pairs(realCivs) do
+			local loopPlayer = Players[iLoopPlayer]
+			for city in loopPlayer:Cities() do
+				TestAddOption("Plot", city:GetX(), city:GetY(), 0, nil)
+			end
+		end
+	end
+end
+
 AITarget.NearbyNonFeature = function()
 	for x, y in PlotToRadiusIterator(g_gpX, g_gpY, 5) do
 		local plot = GetPlotFromXY(x, y)
@@ -450,10 +471,22 @@ AITarget.NearbyLivTerrain = function()
 	end
 end
 
-AITarget.Tower = function()
+AITarget.TowerTemple = function()
 	local tower = gWonders[EA_WONDER_ARCANE_TOWER][g_iPerson]
 	if tower then
 		local x, y = GetXYFromPlotIndex(tower.iPlot)
+		TestAddOption("Plot", x, y, 0, nil)
+	elseif g_eaPerson.templeID then
+		local temple = gWonders[g_eaPerson.templeID]
+		local x, y = GetXYFromPlotIndex(temple.iPlot)
+		TestAddOption("Plot", x, y, 0, nil)
+	end
+end
+
+AITarget.Temple = function()
+	if g_eaPerson.templeID then
+		local temple = gWonders[g_eaPerson.templeID]
+		local x, y = GetXYFromPlotIndex(temple.iPlot)
 		TestAddOption("Plot", x, y, 0, nil)
 	end
 end
@@ -484,14 +517,10 @@ AITarget.VacantTower = function()
 	end
 end
 
-local wideSearchRings = {2,4,6,9,12,15}
+local wideSearchRings = {2,4,6,9,12}
 
-AITarget.TowerToWide = function()			-- Test in caster's tower and spaced out rings to distance 15 (exclude water)
-	local tower = gWonders[EA_WONDER_ARCANE_TOWER][g_iPerson]
-	if tower then
-		local x, y = GetXYFromPlotIndex(tower.iPlot)
-		TestAddOption("Plot", x, y, 0, nil)
-	end
+AITarget.SpacedRingsWide = function()
+	TestAddOption("Plot", g_gpX, g_gpY, 0, 0)
 	for _, radius in pairs(wideSearchRings) do
 		for plot in PlotRingIterator(g_gpPlot, radius, 1, false) do
 			if not plot:IsWater() then
@@ -501,6 +530,7 @@ AITarget.TowerToWide = function()			-- Test in caster's tower and spaced out rin
 		end
 	end
 end
+
 
 local getClosestCityCache = {callCount = 0}
 
@@ -730,12 +760,17 @@ AITarget.RevealedGRWs = function()		--for Dispel Glyphs, Runes and Wards
 	end
 end
 
-
+AITarget.AhrimansVault = function()
+	for iPlot in pairs(gg_cachedMapPlots.accessAhrimansVault) do
+		local x, y = GetXYFromPlotIndex(iPlot)
+		TestAddOption("Plot", x, y, 0, nil)
+	end
+end
 -------------------------------------------------------------------------------
 
 local function AddNonCombatOptions()
 	g_nonCombatCallCount = g_nonCombatCallCount + 1
-	print("Running AddNonCombatOptions", bSpellCaster)
+	print("Running AddNonCombatOptions")
 	local TestAddOption = TestAddOption
 
 	--cycle through all registered actions and then spells (if any)
@@ -754,9 +789,11 @@ local function AddNonCombatOptions()
 			if bTest then
 				local eaAction = GameInfo.EaActions[g_eaActionID]
 				print("AI: Non-target tests passed for ", eaAction.Type)
-				local AITargetFunction = AITarget[eaAction.AITarget]
-				if AITargetFunction then
-					AITargetFunction()
+				if AITarget[eaAction.AITarget] then
+					AITarget[eaAction.AITarget]()
+				end
+				if AITarget[eaAction.AITarget2] then
+					AITarget[eaAction.AITarget2]()
 				end
 			end
 		end
@@ -817,11 +854,11 @@ local function CompareOptions()
 				local blacklistGotoTurn = blacklistGoto and blacklistGoto[option.iPlot]
 				local blacklistActionTurn = blacklist and blacklist[option.eaActionID] and blacklist[option.eaActionID][option.iPlot]
 				if blacklistGotoTurn and Game.GetGameTurn() < blacklistGotoTurn + 30 then
-					print(Format(formatBlkLstStr, index, eaActionType, iArea, option.iPlot, option.travelTurns, option.actionTurns, option.i, option.p, option.b, option.numerator, option.denominator, option.vPP, option.vP), "Blacklist goto turn = ", blacklistGotoTurn)
+					print(format(formatBlkLstStr, index, eaActionType, iArea, option.iPlot, option.travelTurns, option.actionTurns, option.i, option.p, option.b, option.numerator, option.denominator, option.vPP, option.vP), "Blacklist goto turn = ", blacklistGotoTurn)
 				elseif blacklistActionTurn then
-					print(Format(formatBlkLstStr, index, eaActionType, iArea, option.iPlot, option.travelTurns, option.actionTurns, option.i, option.p, option.b, option.numerator, option.denominator, option.vPP, option.vP), "Blacklist action turn = ", blacklistGotoTurn)
+					print(format(formatBlkLstStr, index, eaActionType, iArea, option.iPlot, option.travelTurns, option.actionTurns, option.i, option.p, option.b, option.numerator, option.denominator, option.vPP, option.vP), "Blacklist action turn = ", blacklistGotoTurn)
 				else
-					print(Format(formatOptionStr, index, eaActionType, iArea, option.iPlot, option.travelTurns, option.actionTurns, option.i, option.p, option.b, option.numerator, option.denominator, option.vPP, option.vP))
+					print(format(formatOptionStr, index, eaActionType, iArea, option.iPlot, option.travelTurns, option.actionTurns, option.i, option.p, option.b, option.numerator, option.denominator, option.vPP, option.vP))
 
 					--find best vP
 					if option.vP > vP.value then
@@ -1081,7 +1118,7 @@ function AIGPTestCombatInterrupt(iPlayer, iPerson, unit)		--called each turn (un
 			print("Examining iPlayer, unit cluster ", iLoopPlayer, i)
 			local cluster = clusters[i]
 			if iLoopPlayer == iPlayer then		--Our unit cluster (maybe we are on the move)
-				if not bIsConstrainedLeader and cluster.iPlayerTarget then
+				if cluster.iPlayerTarget then
 					if cluster.intent == "Hostile" then
 						if PlotDistance(gpX, gpY, cluster.x, cluster.y) < 24 then	--"pre-screen" here to prevent excessive AStar pathfinding
 							--local tt = EaPersonAStarTurns(iPlayer, iPerson, gpX, gpY, cluster.x, cluster.y)

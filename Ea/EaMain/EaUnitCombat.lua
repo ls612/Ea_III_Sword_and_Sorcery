@@ -5,7 +5,6 @@
 
 print("Loading EaUnitCombat.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- File Locals
@@ -14,6 +13,8 @@ local Dprint = DEBUG_PRINT and print or function() end
 --constants
 local BARB_PLAYER_INDEX =							BARB_PLAYER_INDEX
 local ANIMALS_PLAYER_INDEX =						ANIMALS_PLAYER_INDEX
+
+local MAX_CITY_HIT_POINTS =							GameDefines.MAX_CITY_HIT_POINTS
 
 local BUILDING_INTERNMENT_CAMP =					GameInfoTypes.BUILDING_INTERNMENT_CAMP
 local DOMAIN_LAND =									DomainTypes.DOMAIN_LAND
@@ -40,6 +41,7 @@ local UNIT_WORKERS_ORC =							GameInfoTypes.UNIT_WORKERS_ORC
 
 --localized tables
 local MapModData =					MapModData
+local gWorld =						gWorld
 local gPlayers =					gPlayers
 local gPeople =						gPeople
 local Players =						Players
@@ -53,10 +55,12 @@ local gg_regularCombatType =		gg_regularCombatType
 local gg_eaSpecial =				gg_eaSpecial
 
 --localized functions
-local HandleError =					HandleError
 local HandleError10 =				HandleError10
 local HandleError21 =				HandleError21
 local HandleError31 =				HandleError31
+local HandleError81 =				HandleError81
+local HandleErrorF0 =				HandleErrorF0
+
 local floor =						math.floor
 local Rand =						Map.Rand
 local GetPlotFromXY =				Map.GetPlot
@@ -70,6 +74,8 @@ local g_iAttackingPlayer = -1
 local g_iAttackingUnit = -1
 local g_defendingUnitTypeID = -1
 local g_defendingUnitXP = -1
+local g_defendingUnitRace = EARACE_MAN
+local g_defendingCityRace = EARACE_MAN
 
 --------------------------------------------------------------
 -- Cached Tables
@@ -101,8 +107,8 @@ end
 -- Interface
 --------------------------------------------------------------
 
-function CalculateXPManaForAttack(unitTypeId, damage, bKill)
-	local basePower = gg_normalizedUnitPower[unitTypeId] or 18			--city treated as unit with power 18
+function CalculateXPManaForAttack(unitTypeID, damage, bKill)
+	local basePower = gg_normalizedUnitPower[unitTypeID] or 18			--city treated as unit with power 18
 	return floor((damage + (bKill and 50 or 0)) * basePower / 18)		-- 1 pt per 2 hp for a Warriors unit; kill is worth an additional 33 hp
 end
 
@@ -157,7 +163,6 @@ local function OnSerialEventUnitCreated(iPlayer, iUnit, hexVec, unitType, cultur
 				end
 			end
 			if bInternmentCamp then
-				MapModData.bBypassOnCanSaveUnit = true
 				unit:Kill(true, -1)
 				local raceID = GetCityRace(city)		--TO DO: make these unit race, not city race
 				local unitID
@@ -175,7 +180,8 @@ local function OnSerialEventUnitCreated(iPlayer, iUnit, hexVec, unitType, cultur
 		end
 	end
 end
-Events.SerialEventUnitCreated.Add(function(iPlayer, iUnit, hexVec, unitType, cultureType, civID, primaryColor, secondaryColor, unitFlagIndex, fogState, selected, military, notInvisible) return HandleError(OnSerialEventUnitCreated, iPlayer, iUnit, hexVec, unitType, cultureType, civID, primaryColor, secondaryColor, unitFlagIndex, fogState, selected, military, notInvisible) end)
+local function X_OnSerialEventUnitCreated(iPlayer, iUnit, hexVec, unitType, cultureType, civID, primaryColor, secondaryColor, unitFlagIndex, fogState, selected, military, notInvisible) return HandleErrorF0(OnSerialEventUnitCreated, iPlayer, iUnit, hexVec, unitType, cultureType, civID, primaryColor, secondaryColor, unitFlagIndex, fogState, selected, military, notInvisible) end
+Events.SerialEventUnitCreated.Add(X_OnSerialEventUnitCreated)
 
 --------------------------------------------------------------
 -- Combat GameEvents and supporting local functions
@@ -209,7 +215,6 @@ local function OnUnitCaptured(iPlayer, iUnit)
 			local originalOwner = Players[iOriginalOwner]
 			if not originalOwner:IsAlive() or Teams[player:GetTeam()]:IsAtWar(originalOwner:GetTeam()) then
 				print("Non-Slavery human player captured a civilian that can't be returned to original owner; killing")
-				MapModData.bBypassOnCanSaveUnit = true
 				unit:Kill(true, -1)
 				return
 			else
@@ -218,7 +223,6 @@ local function OnUnitCaptured(iPlayer, iUnit)
 			end				
 		else
 			print("Non-Slavery computer player captured a civilian that wasn't returned; killing")
-			MapModData.bBypassOnCanSaveUnit = true
 			unit:Kill(true, -1)
 			return
 		end
@@ -230,7 +234,8 @@ local function OnUnitCaptured(iPlayer, iUnit)
 		end
 	end
 end
-GameEvents.UnitCaptured.Add(function(iPlayer, iUnit) return HandleError21(OnUnitCaptured, iPlayer, iUnit) end)
+local function X_OnUnitCaptured(iPlayer, iUnit) return HandleError21(OnUnitCaptured, iPlayer, iUnit) end
+GameEvents.UnitCaptured.Add(X_OnUnitCaptured)
 
 --Forced interface mode: The Active player must do some something specific (e.g., use Magic Missile) or drop this interface mode and reset unit
 local function ResetForcedInterfaceUnit()		--resets temp attack unit if player fiddles around rather than attacking
@@ -283,7 +288,7 @@ local function ForceUnitSelection(iPlayer, iUnit, hexX, hexY, iUnknown, bSelecte
 	--runs for unselected first, then new selected
 
 	--Time Stop unit
-	if gg_bActivePlayerTimeStop and not bSelected then
+	if gWorld.bActivePlayerTimeStop and not bSelected then
 		local bFoundTimeStopUnit = false
 		for iPerson, eaPerson in pairs(gPeople) do
 			if eaPerson.timeStop then
@@ -297,7 +302,7 @@ local function ForceUnitSelection(iPlayer, iUnit, hexX, hexY, iUnknown, bSelecte
 			end
 		end
 		if not bFoundTimeStopUnit then
-			gg_bActivePlayerTimeStop = false
+			gWorld.bActivePlayerTimeStop = false
 		end
 	end
 
@@ -309,7 +314,7 @@ function CheckTimeStopUnit(unit, eaPerson)
 		eaPerson.timeStop = eaPerson.timeStop - 1
 		if eaPerson.timeStop == 0 then
 			eaPerson.timeStop = nil
-			gg_bActivePlayerTimeStop = false
+			gWorld.bActivePlayerTimeStop = false
 		end
 		unit:SetMoves(120)
 		unit:SetMadeAttack(false)
@@ -372,7 +377,18 @@ function DoSequencedAttacks()	--called directly and at end of OnCombatEnded when
 					end
 
 					if bAllow and attackingUnit:CanMoveOrAttackInto(plot) then
-						attackingUnit:PushMission(MissionTypes.MISSION_MOVE_TO, x, y)
+						attackingUnit:PopMission()
+						attackingUnit:PushMission(MissionTypes.MISSION_MOVE_TO, x, y, 0, 0, 1)
+
+						if attack.unitShouldFollow then				--Warrior after Lead Attack
+							local followingUnit = attack.unitShouldFollow
+							if not followingUnit:IsDelayedDeath() and not followingUnit:IsDead() then
+								if attackingUnit:GetX() == x and attackingUnit:GetY() == y then
+									followingUnit:SetXY(x, y)
+								end
+							end
+						end
+
 						return
 					end
 				end
@@ -406,7 +422,7 @@ local function WarriorLeadCharge(iPlayer, attackingUnit, targetX, targetY)
 
 				--{attackingUnit = unit, defendingPlot = plot or defendingUnit = unit, bRanged, bMoveIfNoEnemy}			
 				gg_sequencedAttacks.pos = gg_sequencedAttacks.pos + 1
-				gg_sequencedAttacks[gg_sequencedAttacks.pos] = {attackingUnit = unit, defendingPlot = GetPlotFromXY(targetX, targetY), bMoveIfNoEnemy = true}
+				gg_sequencedAttacks[gg_sequencedAttacks.pos] = {attackingUnit = unit, defendingPlot = GetPlotFromXY(targetX, targetY), bMoveIfNoEnemy = true, unitShouldFollow = attackingUnit}
 				--above should happen from OnCombatEnded
 
 
@@ -466,9 +482,9 @@ local function OnCombatResult(iAttackingPlayer, iAttackingUnit, attackerDamage, 
 
 	g_defendingUnitTypeID = -1
 	g_defendingUnitXP = -1
-	if defenderMaxHP == 200	then	--city; TO DO: get hp from Defines
+	if defenderMaxHP == MAX_CITY_HIT_POINTS	then	--this is a city
 		--TO DO: get city race
-		gg_defendingCityRace = EARACE_MAN		--use this in city conquest event for slaves
+		g_defendingCityRace = EARACE_MAN		--use this in city conquest event for slaves
 	else
 		local defendingUnit = defendingPlayer:GetUnitByID(iDefendingUnit)	
 		if defendingUnit then
@@ -496,25 +512,45 @@ local function OnCombatResult(iAttackingPlayer, iAttackingUnit, attackerDamage, 
 		end
 	end
 end
-GameEvents.CombatResult.Add(function(iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, targetX, targetY) return HandleError(OnCombatResult, iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, targetX, targetY) end)
+local function X_OnCombatResult(iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, targetX, targetY) return HandleErrorF0(OnCombatResult, iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, targetX, targetY) end
+GameEvents.CombatResult.Add(X_OnCombatResult)
+
+local function GPEscape(player, unit)
+	print("GPEscape ", player, unit)
+	local plot = unit:GetPlot()
+	local sector = Map.Rand(6, "hello") + 1
+	for testPlot in PlotAreaSpiralIterator(plot, 15, sector, false, false, false) do
+		if player:GetPlotDanger(testPlot) == 0 then							--is this plot out of danger?
+			if unit:TurnsToReachTarget(testPlot, 1, 1, 1) < 100 then		--is this plot accessible?
+				unit:SetXY(testPlot:GetX(), testPlot:GetY())
+				unit:SetEmbarked(testPlot:IsWater())
+				testPlot:AddFloatUpMessage("Great Person has escaped!", 1)		--TO DO: txt key
+				print("Great Person has escaped!")
+				return true
+			end
+		end
+	end
+	print("!!!! WARNING: Could not find safe accessible plot for GP to escape to!")
+end
 
 local function OnCombatEnded(iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, plotX, plotY)
 	print("OnCombatEnded ", iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, plotX, plotY)
 	if iAttackingPlayer == -1 then return end
 	local attackingPlayer = Players[iAttackingPlayer]
 	local attackingUnit = attackingPlayer:GetUnitByID(iAttackingUnit)	--unit will be nil if dead
+	local attackingUnitTypeID = attackingUnit and attackingUnit:GetUnitType()
 	local defendingPlayer = Players[iDefendingPlayer]
 	local defendingUnit = defendingPlayer:GetUnitByID(iDefendingUnit)
 
 	--print
-	local attackerUnitType = attackingUnit and GameInfo.Units[attackingUnit:GetUnitType()].Type or "nil"
+	local attackerUnitType = attackingUnit and GameInfo.Units[attackingUnitTypeID].Type or "nil"
 	local defenderUnitType = defendingUnit and GameInfo.Units[defendingUnit:GetUnitType()].Type or "nil"
 	print("Attacker: " .. attackerUnitType .. "; Defender: " .. defenderUnitType)
 
 	if fullCivs[iAttackingPlayer] then	--if full civ then do various functions
 		if attackingUnit then
 			
-			local attackingUnitTypeID = attackingUnit:GetUnitType()
+			
 			if gg_gpTempType[attackingUnitTypeID] then					--was a special GP attack (e.g., Magic Missile)
 				local bEnergyDrain = gg_gpTempType[attackingUnitTypeID] == "EnergyDrain"
 				local bStunChance = gg_gpTempType[attackingUnitTypeID] == "PlasmaBurst"
@@ -599,8 +635,19 @@ local function OnCombatEnded(iAttackingPlayer, iAttackingUnit, attackerDamage, a
 			end
 		end
 	end
+
+	--GPs can escape if defending against non-GP and < 50hp
+	if defenderFinalDamage > 50 and defendingUnit and not defendingUnit:IsDelayedDeath() and not defendingUnit:IsDead() then
+		local iPerson = defendingUnit:GetPersonIndex()
+		if iPerson ~= -1 then
+			if not attackingUnit or attackingUnit:GetPersonIndex() == -1 then
+				GPEscape(defendingPlayer, defendingUnit)
+			end
+		end
+	end
+
 	--archer city conquest test
-	if iAttackingUnitDamage == 0 and attackingUnit and iAttackingPlayer < BARB_PLAYER_INDEX and not defendingUnit and defenderMaxHP - 1 <= defenderFinalDamage and defenderMaxHP == 200 and not gg_gpTempType[attackingUnitTypeID] then	--archer defeated city
+	if attackerFinalDamage == 0 and attackingUnit and iAttackingPlayer < BARB_PLAYER_INDEX and not defendingUnit and defenderMaxHP - 1 <= defenderFinalDamage and defenderMaxHP == MAX_CITY_HIT_POINTS and not gg_gpTempType[attackingUnitTypeID] then	--archer defeated city
 		local plot = GetPlotFromXY(plotX, plotY)
 		local city = plot:GetPlotCity()
 		if city and city:GetDamage() >= MAX_CITY_HIT_POINTS - 1 then
@@ -610,7 +657,7 @@ local function OnCombatEnded(iAttackingPlayer, iAttackingUnit, attackerDamage, a
 	end
 
 	if fullCivs[iDefendingPlayer] and defendingUnit then	--defender Warrior points
-		if dummyUnit[attackingUnitTypeID] then
+		if attackingUnitTypeID and dummyUnit[attackingUnitTypeID] then
 			UpdateWarriorPoints(iDefendingPlayer, false, true)
 		else
 			UpdateWarriorPoints(iDefendingPlayer, true)
@@ -619,7 +666,11 @@ local function OnCombatEnded(iAttackingPlayer, iAttackingUnit, attackerDamage, a
 
 	DoSequencedAttacks()
 end
-GameEvents.CombatEnded.Add(function(iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, plotX, plotY) return HandleError(OnCombatEnded, iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, plotX, plotY) end)
+local function X_OnCombatEnded(iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, plotX, plotY) return HandleErrorF0(OnCombatEnded, iAttackingPlayer, iAttackingUnit, attackerDamage, attackerFinalDamage, attackerMaxHP, iDefendingPlayer, iDefendingUnit, defenderDamage, defenderFinalDamage, defenderMaxHP, iInterceptingPlayer, iInterceptingUnit, interceptorDamage, plotX, plotY) end
+GameEvents.CombatEnded.Add(X_OnCombatEnded)
+
+
+
 
 local function OnCanSaveUnit(iPlayer, iUnit, bDelay)	--fires for combat and non-combat death (disband, settler settled, etc)
 	--Uses and resets file locals set in OnCombatResult above; always fires after that function if this is a combat death
@@ -662,6 +713,11 @@ local function OnCanSaveUnit(iPlayer, iUnit, bDelay)	--fires for combat and non-
 		end
 	end
 
+	if not bDelay then return false end
+	g_iDefendingPlayer, g_iDefendingUnit, g_iAttackingPlayer, g_iAttackingUnit = -1, -1, -1, -1
+	return false
+
+	--[[	don't do this!
 	--for everything below, we only want first call for delayed death
 	if not bDelay then return false end		-- too late now!
 
@@ -681,6 +737,12 @@ local function OnCanSaveUnit(iPlayer, iUnit, bDelay)	--fires for combat and non-
 	end	
 
 	if iPlayer ~= g_iDefendingPlayer or iUnit ~= g_iDefendingUnit then	--this was not a combat defender death
+
+		if unit:GetUnitType() == UNIT_LICH and gWonders[EA_WONDER_ARCANE_TOWER][iPerson] then
+			SaveLich(unit)
+			return true
+		end
+
 		local deathType
 		if iPlayer == g_iAttackingPlayer and iUnit == g_iAttackingUnit then
 			print("An attacking GP was killed in combat")
@@ -688,11 +750,6 @@ local function OnCanSaveUnit(iPlayer, iUnit, bDelay)	--fires for combat and non-
 		else
 			print("A GP was killed for unknown reason; disbanded?")
 			deathType = "Unknown"
-		end
-
-		if unit:GetUnitType() == UNIT_LICH and gWonders[EA_WONDER_ARCANE_TOWER][iPerson] then
-			SaveLich(unit)
-			return true
 		end
 
 		KillPerson(iPlayer, iPerson, nil, nil, deathType)	--unit must be nil here because dll will finish it off!
@@ -704,7 +761,7 @@ local function OnCanSaveUnit(iPlayer, iUnit, bDelay)	--fires for combat and non-
 
 	local attackingPlayer = Players[g_iAttackingPlayer]
 	if attackingPlayer then
-		local attackingUnit = attackingPlayer:GetUnitByID(iAttackingUnit)
+		local attackingUnit = attackingPlayer:GetUnitByID(g_iAttackingPlayer)
 		if attackingUnit and attackingUnit:IsGreatPerson() then
 			print("A GP was killed by an attacking unit in GP layer")
 
@@ -743,25 +800,12 @@ local function OnCanSaveUnit(iPlayer, iUnit, bDelay)	--fires for combat and non-
 	end
 
 	KillPerson(iPlayer, iPerson, nil, nil, "Failed to save GP")
-	return false
+	]]
 
 end
-GameEvents.CanSaveUnit.Add(function(iPlayer, iUnit, bDelay) return HandleError31(OnCanSaveUnit, iPlayer, iUnit, bDelay) end)
+local function X_OnCanSaveUnit(iPlayer, iUnit, bDelay) return HandleError31(OnCanSaveUnit, iPlayer, iUnit, bDelay) end
+GameEvents.CanSaveUnit.Add(X_OnCanSaveUnit)
 
-function SaveLich(unit)
-	local iPlayer = unit:GetOwner()
-	local iPerson = unit:GetPersonIndex()
-	local iPlot = gWonders[EA_WONDER_ARCANE_TOWER][iPerson].iPlot
-	local x, y = GetXYFromPlotIndex(iPlot)
-	--TO DO: need to make Lich "dormant" if tower in ruins
-
-	unit:SetXY(x, y)
-	if unit:GetPlot():GetOwner() ~= iPlayer then
-		unit:JumpToNearestValidPlot()		--only kicks out of tower, but the idea is clear
-	end
-
-	UseManaOrDivineFavor(iPlayer, iPerson, unit:GetLevel() * 10)
-end
 
 
 local function OnCanChangeExperience(iPlayer, iUnit, iSummoner, iExperience, iMax, bFromCombat, bInBorders, bUpdateGlobal)
@@ -777,7 +821,8 @@ local function OnCanChangeExperience(iPlayer, iUnit, iSummoner, iExperience, iMa
 	end
 	return true
 end
-GameEvents.CanChangeExperience.Add(function (iPlayer, iUnit, iSummoner, iExperience, iMax, bFromCombat, bInBorders, bUpdateGlobal) return HandleError(OnCanChangeExperience, iPlayer, iUnit, iSummoner, iExperience, iMax, bFromCombat, bInBorders, bUpdateGlobal) end)
+local function X_OnCanChangeExperience(iPlayer, iUnit, iSummoner, iExperience, iMax, bFromCombat, bInBorders, bUpdateGlobal) return HandleError81(OnCanChangeExperience, iPlayer, iUnit, iSummoner, iExperience, iMax, bFromCombat, bInBorders, bUpdateGlobal) end
+GameEvents.CanChangeExperience.Add(X_OnCanChangeExperience)
 
 local function OnBarbExperienceDenied(iPlayer, iUnit, iSummoner, iExperience)
 	print("OnBarbExperienceDenied ", iPlayer, iUnit, iSummoner, iExperience)
@@ -786,7 +831,8 @@ local function OnBarbExperienceDenied(iPlayer, iUnit, iSummoner, iExperience)
 		UseManaOrDivineFavor(iSummoner, nil, iExperience, true)
 	end
 end
-GameEvents.BarbExperienceDenied.Add(function (iPlayer, iUnit, iSummoner, iExperience) return HandleError41(OnBarbExperienceDenied, iPlayer, iUnit, iSummoner, iExperience) end)
+local function X_OnBarbExperienceDenied(iPlayer, iUnit, iSummoner, iExperience) return HandleError41(OnBarbExperienceDenied, iPlayer, iUnit, iSummoner, iExperience) end
+GameEvents.BarbExperienceDenied.Add(X_OnBarbExperienceDenied)
 
 
 

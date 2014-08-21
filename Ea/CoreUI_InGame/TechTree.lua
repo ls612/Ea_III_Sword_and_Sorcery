@@ -471,7 +471,7 @@ function TechSelected( eTech, iDiscover)
 		end
    	end
 	--Paz add
-	--MapModData.bRequestPlayerScienceUpdate = true
+	LuaEvents.EaYieldsUpdateCityYields(playerID, nil, "Science", false)
 	--end Paz add
 end
 
@@ -617,8 +617,8 @@ function RefreshDisplay()
 	print("REFRESHING TECH DISPLAY");
 
 	--Paz add
-	LuaEvents.EaTechsResetTechCostMods(Game.GetActivePlayer())
-	print("after EaTechsResetTechCostMods from RefreshDisplay")
+	LuaEvents.EaTechsResetTechCosts(Game.GetActivePlayer())
+	print("after EaTechsResetTechCosts from RefreshDisplay")
 	--end Paz add
 
 	for tech in GameInfo.Technologies() do

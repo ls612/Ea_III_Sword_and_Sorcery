@@ -11,6 +11,7 @@ include("EaFaithHelper.lua")
 local MapModData = MapModData
 MapModData.gT = MapModData.gT or {}
 local gT = MapModData.gT
+local EaSettings = MapModData.EaSettings
 
 local EA_EPIC_VOLUSPA = GameInfoTypes.EA_EPIC_VOLUSPA
 local EA_EPIC_HAVAMAL = GameInfoTypes.EA_EPIC_HAVAMAL
@@ -567,14 +568,34 @@ function ScienceTipHandler( control )
 		end
 
 		--Knowledge Maintenance blurb
-		local civInsert = ""
-		if MapModData.KM_PER_TECH_PER_CITIZEN then
-			local civName = Locale.Lookup(PreGame.GetCivilizationShortDescription(iPlayerID))
-			local baseKMString = string.format("%.3f", MapModData.KM_PER_TECH_PER_CITIZEN)
-			civInsert = " " .. Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT_ADJUSMENT_INSERT", civName, MapModData.KM_PER_TECH_PER_CITIZEN)
+		local kmPerTechPerCitizen = MapModData.kmPerTechPerCitizen
+		local kmReduction = 0
+		local popReductionInsert = ""
+		if MapModData.intelligentArchiveKMReduction ~= 0 then
+			popReductionInsert = Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT_POP_INSERT", string.format("%.2f", MapModData.intelligentArchiveKMReduction))
 		end
-		local kmPerTechPerCitizen = math.floor(1000 * MapModData.kmPerTechPerCitizen + 0.5) / 1000
-		local kmBlurb = Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT", MapModData.knowlMaint, MapModData.techCount, MapModData.totalPopulationForKM, kmPerTechPerCitizen, civInsert)
+
+		local reductionInsert = ""
+		--" (reduced xx% for <civ name> and xx% for Great Library)"
+		if MapModData.civKMPercent ~= 0 then
+			kmReduction = kmReduction + MapModData.civKMPercent
+			local civName = Locale.Lookup(PreGame.GetCivilizationShortDescription(iPlayerID))
+			reductionInsert = reductionInsert .. Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT_CIV_INSERT", MapModData.civKMPercent, civName)
+		end
+		if MapModData.greatLibraryKMPercent ~= 0 then
+			kmReduction = kmReduction + MapModData.greatLibraryKMPercent
+			if reductionInsert ~= "" then
+				reductionInsert = reductionInsert .. " " .. Locale.Lookup("TXT_KEY_EA_TP_AND") .. " "
+			end
+			reductionInsert = reductionInsert .. Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT_GREAT_LIBRARY_INSERT", MapModData.greatLibraryKMPercent)
+		end
+		if kmReduction ~= 0 then
+			kmPerTechPerCitizen = kmPerTechPerCitizen * (100 - kmReduction) / 100			
+			reductionInsert = " " .. Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT_MOD_INSERT", reductionInsert)
+		end
+
+		kmPerTechPerCitizen = math.floor(1000 * kmPerTechPerCitizen + 0.5) / 1000
+		local kmBlurb = Locale.Lookup("TXT_KEY_EA_TP_KNOWLEDGE_MAINT", MapModData.knowlMaint, MapModData.techCount, MapModData.totalPopulationForKM, popReductionInsert, kmPerTechPerCitizen, reductionInsert)
 
 		strText = strText .. "[NEWLINE][NEWLINE]" .. kmBlurb
 		--end Paz add
@@ -1197,12 +1218,12 @@ function FaithTipHandler( control )
 		end
 
 		if eaPlayer.bIsFallen then
-			local consumed = eaPlayer.manaConsumed or 0
+			local consumed = eaPlayer.manaConsumed
 			local percentStr
 			if consumed == 0 then
 				percentStr = "0"
 			else
-				local percentConsumed = 100 * consumed / MapModData.STARTING_SUM_OF_ALL_MANA
+				local percentConsumed = 100 * consumed / EaSettings.STARTING_SUM_OF_ALL_MANA
 				local decimalPlaces = math.floor(1 - math.log10(percentConsumed))
 				decimalPlaces = decimalPlaces < 0 and 0 or decimalPlaces
 				percentStr = string.format("%.".. decimalPlaces .. "f", percentConsumed)
@@ -1214,13 +1235,13 @@ function FaithTipHandler( control )
 		local faithFromGods = pPlayer:GetFaithPerTurnFromMinorCivs()	--game engine only sees this from Gods
 		local faithFromReligion = pPlayer:GetFaithPerTurnFromReligion()				--for Azz and Anra only since these use base follower counting mechanism
 		local faithFromLeader = pPlayer:GetLeaderYieldBoost(GameInfoTypes.YIELD_FAITH) * (faithFromGods + faithFromReligion) / 100	
-		local manaForCultOfLeavesFounder = eaPlayer.manaForCultOfLeavesFounder or 0
-		local manaForCultOfAbzuFounder = eaPlayer.manaForCultOfAbzuFounder or 0
-		local manaForCultOfAegirFounder = eaPlayer.manaForCultOfAegirFounder or 0
-		local manaForCultOfPloutonFounder = eaPlayer.manaForCultOfPloutonFounder or 0
-		local manaForCultOfCahraFounder = eaPlayer.manaForCultOfCahraFounder or 0
-		local manaForCultOfEponaFounder = eaPlayer.manaForCultOfEponaFounder or 0
-		local manaForCultOfBakkheiaFounder = eaPlayer.manaForCultOfBakkheiaFounder or 0
+		local manaForCultOfLeavesFounder = eaPlayer.manaForCultOfLeavesFounder
+		local manaForCultOfAbzuFounder = eaPlayer.manaForCultOfAbzuFounder
+		local manaForCultOfAegirFounder = eaPlayer.manaForCultOfAegirFounder
+		local manaForCultOfPloutonFounder = eaPlayer.manaForCultOfPloutonFounder
+		local manaForCultOfCahraFounder = eaPlayer.manaForCultOfCahraFounder
+		local manaForCultOfEponaFounder = eaPlayer.manaForCultOfEponaFounder
+		local manaForCultOfBakkheiaFounder = eaPlayer.manaForCultOfBakkheiaFounder
 		local manaFromWildlands = eaPlayer.cultureManaFromWildlands or 0
 		local faithFromCityStates = MapModData.faithFromCityStates
 		local faithFromAzzTribute = MapModData.faithFromAzzTribute

@@ -4,13 +4,12 @@
 --------------------------------------------------------------
 print("Loading EaMagic.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- File Locals
 --------------------------------------------------------------
 --constants
-local STARTING_SUM_OF_ALL_MANA =		MapModData.STARTING_SUM_OF_ALL_MANA
+local STARTING_SUM_OF_ALL_MANA =		EaSettings.STARTING_SUM_OF_ALL_MANA
 local ARMAGEDDON_IMAGE_INFO =			GameInfo.EaPopups.EAPOPUP_DEATH_OTHER
 local ARMAGEDDON_SOUND =				"AS2D_EVENT_NOTIFICATION_VERY_BAD"
 
@@ -32,7 +31,7 @@ function EaArmageddonPerTurn()
 	local armageddonStage = gWorld.armageddonStage
 
 	-- Warning popup. Civilizations begin to account for mana depletion in diplo relations.
-	if 95 < manaPercent then return end
+	if 97.5 < manaPercent then return end
 	if armageddonStage < 1 then
 		gWorld.armageddonStage = 1
 		print("Armageddon stage 1")
@@ -47,7 +46,7 @@ function EaArmageddonPerTurn()
 	-- Undead begin to spawn from old battlefields and city graveyards, and demons from breach
 	-- plots (if any exist). 1% chance per plot per turn increasing to 10% as the Sum of All
 	-- Mana depletes to zero.
-	if 90 < manaPercent then return end
+	if 95 < manaPercent then return end
 	if armageddonStage < 2 then
 		gWorld.armageddonStage = 2
 		print("Armageddon stage 2")
@@ -60,7 +59,7 @@ function EaArmageddonPerTurn()
 
 	-- Begins to sap happiness and health from all civilizations. -2 for both increasing
 	-- to -20 as the Sum of All Mana approaches zero.
-	if 80 < manaPercent then return end
+	if 90 < manaPercent then return end
 	if armageddonStage < 3 then
 		gWorld.armageddonStage = 3
 		print("Armageddon stage 3")
@@ -69,14 +68,14 @@ function EaArmageddonPerTurn()
 			LuaEvents.EaImagePopup({type = "Generic", textKey = "TXT_KEY_EA_ARMAGEDDON_3", imageInfo = ARMAGEDDON_IMAGE_INFO, sound = ARMAGEDDON_SOUND})
 		end
 	end
-	gWorld.armageddonSap = floor(0.225 * (80 - manaPercent) + 2)	--health sap applied in EaCities.lua and happiness sap in EaCivs.lua
+	gWorld.armageddonSap = floor(0.2 * (90 - manaPercent) + 2)	--health sap applied in EaCities.lua and happiness sap in EaCivs.lua
 
 	-- Blight begins to spread from already blighted plots, and breach from already breached
 	-- plots. Blight spreads outward from existing blight (inhibited to some extent by living
-	-- terrain). Breach, if present, spreads in fault-like patterns over land and sea and
-	-- destroys everything in its path. The rate of spread increases as the Sum of All Mana
+	-- terrain). Breach, if present, spreads in fault-like patterns over land destroying
+	-- everything in its path. The rate of spread increases as the Sum of All Mana
 	-- depletes to zero.
-	if 66 < manaPercent then return end
+	if 80 < manaPercent then return end
 	if armageddonStage < 4 then
 		gWorld.armageddonStage = 4
 		print("Armageddon stage 4")
@@ -90,7 +89,7 @@ function EaArmageddonPerTurn()
 	-- The world is corrupted by a surge of blight, affecting 1 out of every 20 plots.
 	-- All mana accumulative processes are reduced by 33%, and reduced further toward 90% as
 	-- the Sum of All Mana depletes to zero. (This does not affect divine favor.)
-	if 50 < manaPercent then return end
+	if 70 < manaPercent then return end
 	if armageddonStage < 5 then
 		gWorld.armageddonStage = 5
 		print("Armageddon stage 5")
@@ -110,7 +109,7 @@ function EaArmageddonPerTurn()
 	-- The fabric of the world begins to tear: 1 out of every 40 plots becomes Breached.
 	-- Blight begins to appear spontaneously. 2.5% chance per unaffected plot per turn increasing
 	-- to 10% as the Sum of All Mana depletes to zero.
-	if 33 < manaPercent then return end
+	if 60 < manaPercent then return end
 	if armageddonStage < 6 then
 		gWorld.armageddonStage = 6
 		print("Armageddon stage 6")
@@ -130,7 +129,7 @@ function EaArmageddonPerTurn()
 	-- Pestilence, the first of the Four Horsemen, arrives riding a White Horse. He carries the
 	-- Sickening Bow and the Plague Crown which cause (respectively) sickness in all units and
 	-- plague in all cities that he attacks.
-	if 25 < manaPercent then return end
+	if 50 < manaPercent then return end
 	if armageddonStage < 7 then
 		gWorld.armageddonStage = 7
 		print("Armageddon stage 7")
@@ -144,7 +143,7 @@ function EaArmageddonPerTurn()
 	-- War arrives riding a Red Horse. He carries a sword (also called War) that causes nearby
 	-- civilizations to sever relationships and war upon each other, and the cities and units of
 	-- larger civilizations to revolt and war upon their owners.
-	if 20 < manaPercent then return end
+	if 40 < manaPercent then return end
 	if armageddonStage < 8 then
 		gWorld.armageddonStage = 8
 		print("Armageddon stage 8")
@@ -157,7 +156,7 @@ function EaArmageddonPerTurn()
 
 	-- Famine arrives riding a Black Horse. He carries the Scales of Insolvency which bring
 	-- starvation to all nearby units and cities.
-	if 15 < manaPercent then return end
+	if 30 < manaPercent then return end
 	if armageddonStage < 9 then
 		gWorld.armageddonStage = 9
 		print("Armageddon stage 9")
@@ -170,7 +169,7 @@ function EaArmageddonPerTurn()
 
 	-- Death arrives riding a Pale Horse. He carries no items but kills by sword, famine, plague
 	-- and the enraged animals and beasts of Ea.
-	if 10 < manaPercent then return end
+	if 20 < manaPercent then return end
 	if armageddonStage < 10 then
 		gWorld.armageddonStage = 10
 		print("Armageddon stage 10")

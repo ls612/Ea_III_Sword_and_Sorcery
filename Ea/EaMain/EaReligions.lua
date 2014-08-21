@@ -5,14 +5,13 @@
 
 print("Loading EaReligions.lua...")
 local print = ENABLE_PRINT and print or function() end
-local Dprint = DEBUG_PRINT and print or function() end
 
 --------------------------------------------------------------
 -- Settings
 -------------------------------------------------------------
 
-local MANA_CONSUMED_BY_ANRA_FOUNDING =		1000
-local MANA_CONSUMED_BY_CIV_FALL =			200
+local MANA_CONSUMED_BY_ANRA_FOUNDING =	EaSettings.MANA_CONSUMED_BY_ANRA_FOUNDING
+local MANA_CONSUMED_BY_CIV_FALL =		EaSettings.MANA_CONSUMED_BY_CIV_FALL
 
 --------------------------------------------------------------
 -- File Locals
@@ -46,11 +45,12 @@ local realCivs =	MapModData.realCivs
 local fullCivs =	MapModData.fullCivs
 local gPlayers =	gPlayers
 local gReligions =	gReligions
---local gg_religionFollowersByEaCityIndex = gg_religionFollowersByEaCityIndex
+local gg_techTier =	gg_techTier
 
 --functions
 local Rand = Map.Rand
 local floor = math.floor
+local HandleError21 = HandleError21
 
 --file control
 local g_iActivePlayer = Game.GetActivePlayer()
@@ -143,7 +143,7 @@ function ReligionPerGameTurn()
 					local city = eligibleCitiesAtheists[index]
 					local numAtheists = city:GetNumFollowers(-1)
 					local numReligionBefore = city:GetNumFollowers(religionID)
-					city:ConvertPercentFollowers(religionID, -1, floor(100 / numAtheists + 0.5))
+					city:ConvertPercentFollowers(religionID, -1, floor(100 / numAtheists + 0.9))
 					local thisConversionNum = city:GetNumFollowers(religionID) - numReligionBefore
 					numConverted = numConverted + thisConversionNum
 					if thisConversionNum ~= 1 then
@@ -168,7 +168,7 @@ function ReligionPerGameTurn()
 							citizenNumber = citizenNumber + loopFollowers
 							if citizenToConvert < citizenNumber then
 								local numReligionBefore = city:GetNumFollowers(religionID)
-								city:ConvertPercentFollowers(religionID, loopReligionID, floor(100 / loopFollowers + 0.5))
+								city:ConvertPercentFollowers(religionID, loopReligionID, floor(100 / loopFollowers + 0.9))
 								local thisConversionNum = city:GetNumFollowers(religionID) - numReligionBefore
 								numConverted = numConverted + (thisConversionNum * 5)	--5x harder to convert from religion
 								if thisConversionNum ~= 1 then
@@ -186,6 +186,47 @@ function ReligionPerGameTurn()
 			gWorld[convertKey] = gWorld[convertKey] - numConverted
 		end
 	end
+
+	--AI player who owns Anra Holy City might raze it
+	local anraHolyCity = gReligions[RELIGION_ANRA] and Game.GetHolyCityForReligion(GameInfoTypes.RELIGION_ANRA, -1)
+	if anraHolyCity then
+		local iOwner = anraHolyCity:GetOwner()
+		local eaOwner = gPlayers[iOwner]
+		if not eaOwner.bIsFallen and not eaOwner.bRenouncedMaleficium then
+			if iOwner ~= anraHolyCity:GetOriginalOwner() and not Players[iOwner]:IsHuman() then
+				if not anraHolyCity:IsRazing() then
+					anraHolyCity:ChangeRazingTurns(1000)
+				end
+			end
+		end
+	end
+
+	--Protector VC stuff
+	local bAllow = true
+	for iPlayer, eaPlayer in pairs(fullCivs) do
+		if eaPlayer.bIsFallen and not eaPlayer.bRenouncedMaleficium then
+			bAllow = false
+			break
+		end
+	end
+	if bAllow then
+		print(" -there are currently no fallen civs that have not renounced maleficium")
+		if not gReligions[RELIGION_ANRA] or (not Game.GetHolyCityForReligion(RELIGION_ANRA, -1) and Game.GetNumFollowers(RELIGION_ANRA) == 0) then
+			print(" -everything is good... where are we with Prophecy of Simsum and Sealing the Vault?")
+			if gWorld.evilControl == "Sealed" then
+				gWorld.bEnableProtectorVC = true
+				print(" -all Protector VCs met; should have victory now...")
+				TestUpdateVictory(-1)				--will trigger VC
+				return
+			elseif gWorld.evilControl == "Open" then
+				print(" -making Seal Ahriman's Vault easy now...")
+				gWorld.bEnableEasyVaultSeal = true	--any GP can do it cheaply now
+				return
+			end
+		end
+	end
+	gWorld.bEnableEasyVaultSeal = false		--conditions might have changed
+	--Caution! VC test above returns out of function
 end
 
 function UpdateCivReligion(iPlayer, bPerTurnCall)		--per turn and when update needed
@@ -269,7 +310,8 @@ end
 
 function SetDivineFavorUse(iPlayer, bDivineFavor)
 	print("SetDivineFavorUse ", iPlayer, bDivineFavor)
-	--Always set eaPlayer.bUsesDivineFavor here so we can keep track of everything in one place
+	--Always set eaPlayer.bUsesDivineFavor here so we can do all associated changes in one place!
+
 	local eaPlayer = gPlayers[iPlayer]
 	if not eaPlayer.bUsesDivineFavor == not bDivineFavor then return end	--already done (not's used to make nil and false equivelent)
 
@@ -279,8 +321,8 @@ function SetDivineFavorUse(iPlayer, bDivineFavor)
 	--save old accumulation in case flips back
 	local player = Players[iPlayer]
 	local saveFaith = player:GetFaith()
-	player:SetFaith(eaPlayer.savedFaithFromManaDivineFavorSwap or 0)
-	eaPlayer.savedFaithFromManaDivineFavorSwap = 0 < saveFaith and saveFaith or nil
+	player:SetFaith(eaPlayer.savedFaithFromManaDivineFavorSwap)
+	eaPlayer.savedFaithFromManaDivineFavorSwap = 0 < saveFaith and saveFaith or 0
 
 	--notification
 	if iPlayer == g_iActivePlayer and 0 < saveFaith then
@@ -293,10 +335,9 @@ function SetDivineFavorUse(iPlayer, bDivineFavor)
 		player:AddNotification(NotificationTypes.NOTIFICATION_RELIGION_ERROR, text, text, -1, -1)
 	end
 
-	--hidden techs
-	local team = Teams[player:GetTeam()]
-	team:SetHasTech(GameInfoTypes.TECH_ALLOW_DIVINE_FAVOR_YIELDS, bDivineFavor)
-	team:SetHasTech(GameInfoTypes.TECH_ALLOW_MANA_YIELDS, not bDivineFavor)
+	--hidden policies
+	player:SetHasPolicy(GameInfoTypes.POLICY_USES_DIVINE_FAVOR, bDivineFavor)
+	player:SetHasPolicy(GameInfoTypes.POLICY_USES_MANA, not bDivineFavor)
 
 end
 
@@ -304,6 +345,7 @@ function FoundReligion(iPlayer, iCity, religionID)	--call should make sure that 
 	print("FoundReligion ", iPlayer, iCity, religionID)
 	local player = Players[iPlayer]
 	local city = player:GetCityByID(iCity)
+	local eaCity = gCities[city:Plot():GetPlotIndex()]
 	local eaPlayer = gPlayers[iPlayer]
 	local religion = GameInfo.Religions[religionID]
 	gReligions[religionID] = {founder = iPlayer}		--use table existance to know religion is founded (no game function for this)
@@ -311,17 +353,40 @@ function FoundReligion(iPlayer, iCity, religionID)	--call should make sure that 
 	local belief2ID = religion.EaInitialBelief2 and GameInfoTypes[religion.EaInitialBelief2] or -1
 	local belief3ID = religion.EaInitialBelief3 and GameInfoTypes[religion.EaInitialBelief3] or -1
 
+	if religionID == RELIGION_ANRA and gWorld.evilControl == "Sealed" then return end	--don't know how but maybe
+
+	--get credit for converting Anra followers
+	local anraFollowersBefore = not eaPlayer.bIsFallen and gReligions[RELIGION_ANRA] and city:GetNumFollowers(RELIGION_ANRA) or 0
+
 	Game.FoundReligion(iPlayer, religionID, nil, beliefID, belief2ID, belief3ID, -1, city)
+	if not city:IsHolyCityForReligion(religionID) then
+		error("city isn't Holy City after religion founding")
+	end
+
+	if eaCity then		--doesn't exist for initail Fay founding of the Weave
+		eaCity.holyCityFor = eaCity.holyCityFor or {}
+		eaCity.holyCityFor[religionID] = true		--need this to figure out if an eaCity was HC after it has been razed to ground
+	end
 
 	while city:GetReligiousMajority() ~= religionID do	--make it so
 		local convertID, followers
 		repeat
 			convertID = Rand(HIGHEST_RELIGION_ID + 2, "hello") - 1
-			followers = (convertID == -1 or gReligions[convertID]) and city:GetNumFollowers(convertID)
+			if convertID ~= religionID then
+				followers = (convertID == -1 or gReligions[convertID]) and city:GetNumFollowers(convertID)
+			end
 		until followers
 		print("Converting random religions until founded is majority; converting religionID = ", convertID)
-		local convertPercent = floor(1 + 100 / followers)
+		local convertPercent = floor(100 / followers + 0.9)
 		city:ConvertPercentFollowers(religionID, convertID, convertPercent)
+	end
+
+
+	if not eaPlayer.bIsFallen then		--tally up conversion credit
+		local anraFollowersAfter = gReligions[RELIGION_ANRA] and city:GetNumFollowers(RELIGION_ANRA) or 0
+		if anraFollowersAfter < anraFollowersBefore then
+			eaPlayer.fallenFollowersDestr = (eaPlayer.fallenFollowersDestr or 0) + 2 * (anraFollowersAfter - anraFollowersBefore)
+		end
 	end
 
 	if religionID == RELIGION_ANRA and not eaPlayer.bIsFallen then
@@ -334,9 +399,11 @@ function FoundReligion(iPlayer, iCity, religionID)	--call should make sure that 
 	end
 
 	if religionID == RELIGION_ANRA then
+		gWorld.bAnraHolyCityExists = true
+
 		--Burn a good chunk of mana
 		gWorld.sumOfAllMana = gWorld.sumOfAllMana - MANA_CONSUMED_BY_ANRA_FOUNDING
-		eaPlayer.manaConsumed = (eaPlayer.manaConsumed or 0) + MANA_CONSUMED_BY_ANRA_FOUNDING
+		eaPlayer.manaConsumed = eaPlayer.manaConsumed + MANA_CONSUMED_BY_ANRA_FOUNDING
 	end
 end
 
@@ -415,6 +482,31 @@ function RefreshBeliefs(policyID)	--if policyID is nil then checks all policies 
 	end
 end
 
+function ChangeMaleficiumLevelWithTests(iPlayer, change)
+	--some checks here to make sure we're not doing this wrong
+	if not fullCivs[iPlayer] then return end
+	local eaPlayer = gPlayers[iPlayer]
+	if eaPlayer.bRenouncedMaleficium then return end		--these guys never go positive or negative, so won't offer or ask for Renounce Maleficium
+	if change < 0 then
+		if not eaPlayer.bIsFallen then
+			local player = Players[iPlayer]
+			local maleficiumLevel = player:GetMaleficiumLevel()
+			maleficiumLevel = maleficiumLevel > 0 and 0 or maleficiumLevel	--max 0, then change
+			maleficiumLevel = maleficiumLevel + change
+			player:SetMaleficiumLevel(maleficiumLevel)
+		end
+	elseif change > 0 then
+		if eaPlayer.bIsFallen then
+			local player = Players[iPlayer]
+			local maleficiumLevel = player:GetMaleficiumLevel()
+			maleficiumLevel = maleficiumLevel < 0 and 0 or maleficiumLevel	--min 0, then change
+			maleficiumLevel = maleficiumLevel + change
+			player:SetMaleficiumLevel(maleficiumLevel)	
+		end
+	end
+end
+
+
 function BecomeFallen(iPlayer)		--this could happen before, during or after the founding of Anra
 	local eaPlayer = gPlayers[iPlayer]
 	if eaPlayer.bIsFallen then return end
@@ -423,17 +515,34 @@ function BecomeFallen(iPlayer)		--this could happen before, during or after the 
 	local player = Players[iPlayer]
 	eaPlayer.bIsFallen = true
 	SetDivineFavorUse(iPlayer, false)
+	player:SetHasPolicy(GameInfoTypes.POLICY_IS_FALLEN, true)
 
-	--"Mirror" Theism branch
+	--MaleficiumLevel; figure this out from scratch since bad effects weren't given before civ was Fallen
+	local maleficiumLevel = 1
+
+	--techs
+	for techID, eaTechType in pairs(gg_eaTechClass) do
+		if eaPlayer.techs[techID] then
+			if eaTechType == "ArcaneEvil" then
+				maleficiumLevel = maleficiumLevel + gg_techTier[techID]
+			elseif eaTechType == "Arcane" then
+				maleficiumLevel = maleficiumLevel + floor(gg_techTier[techID] / 2)
+			end
+		end
+	end
+
+	--Mirror Theism branch; this WON'T call OnPlayerAdoptPolicyBranch & OnPlayerAdoptPolicy so do anything we need to do here
 	if player:HasPolicy(POLICY_THEISM) then
 		print("Converting Theism policies to mirror policies")
 		player:SetPolicyBranchUnlocked(POLICY_BRANCH_ANTI_THEISM, true)
 		player:SetHasPolicy(POLICY_ANTI_THEISM, true)
+		maleficiumLevel = maleficiumLevel + 2
 		for policy in GameInfo.Policies() do
 			if policy.PolicyBranchType == "POLICY_BRANCH_THEISM" then
 				if player:HasPolicy(policy.ID) then
 					player:SetHasPolicy(policy.ID, false)
 					player:SetHasPolicy(policy.ID + FALLEN_ID_SHIFT, true)
+					maleficiumLevel = maleficiumLevel + 2
 				end
 			end
 		end
@@ -441,9 +550,12 @@ function BecomeFallen(iPlayer)		--this could happen before, during or after the 
 		if player:HasPolicy(POLICY_THEISM_FINISHER) then
 			player:SetHasPolicy(POLICY_THEISM_FINISHER, false)
 			player:SetHasPolicy(POLICY_ANTI_THEISM_FINISHER, true)
+			maleficiumLevel = maleficiumLevel + 2
 		end
 		player:SetPolicyBranchUnlocked(POLICY_BRANCH_THEISM, false)
 	end
+
+	ChangeMaleficiumLevelWithTests(iPlayer, maleficiumLevel)
 
 	--All spellcasters become Sorcerers
 	for iPerson, eaPerson in pairs(gPeople) do
@@ -495,9 +607,12 @@ function BecomeFallen(iPlayer)		--this could happen before, during or after the 
 	RefreshBeliefs()	--may or may not be redundant with FoundReligion call, but that's OK
 
 	--Burn a little mana at no cost to civ
-	gWorld.sumOfAllMana = gWorld.sumOfAllMana - MANA_CONSUMED_BY_CIV_FALL
-	eaPlayer.manaConsumed = (eaPlayer.manaConsumed or 0) + MANA_CONSUMED_BY_CIV_FALL
+	if gWorld.evilControl ~= "Sealed" then
+		gWorld.sumOfAllMana = gWorld.sumOfAllMana - MANA_CONSUMED_BY_CIV_FALL
+		eaPlayer.manaConsumed = eaPlayer.manaConsumed + MANA_CONSUMED_BY_CIV_FALL
+	end
 end
+
 
 local religionConversionTable = {[-1] = 0}
 local religionPopTable = {[-1] = 0}
@@ -507,7 +622,7 @@ for religion in GameInfo.Religions() do
 end
 
 function GetConversionOutcome(city, religionID, mod)
-	Dprint("GetConversionOutcome ", city, religionID, mod)
+	--print("GetConversionOutcome ", city, religionID, mod)
 	--Priority is non-religious first, then reverse order by ID
 	for i = -1, HIGHEST_RELIGION_ID do
 		religionConversionTable[i] = 0
@@ -549,6 +664,127 @@ function GetConversionOutcome(city, religionID, mod)
 
 	return totalConversions, bFlip, religionConversionTable
 end
+
+function StripCreditMaleficium(iPlayer, iOtherPlayer, bRenounce)	--we're here because an evil civ has either Renounced Maleficium or been killed
+	print("StripCreditMaleficium ", iPlayer, iOtherPlayer, bRenounce)
+	local player = Players[iPlayer]
+	local team = Teams[player:GetTeam()]
+	local eaPlayer = gPlayers[iPlayer]
+
+	local fallenFollowersDestr = 0
+	local civsCorrectedPts = 0		--given permanently or provisionally depending on bRenounce (killed credit reversed if civ resurected)
+
+	--remove techs (note: if we ever have teams, then this probably would break the team)
+	for techID, eaTechClass in pairs(gg_eaTechClass) do
+		if eaTechClass == "ArcaneEvil" then
+			if team:IsHasTech(techID) then
+				print(" -counting tech ", GameInfo.Technologies[techID].Type)
+				civsCorrectedPts = civsCorrectedPts + (5 * gg_techTier[techID])
+				if bRenounce then
+					eaPlayer.techs[techID] = nil
+					team:SetHasTech(techID, false)
+				end
+			end
+		end
+	end
+
+	--remove policies; CL will be reduced but this is only temporary setback since Approach CL is unaffected
+	local loseCLs = 0
+	for policyInfo in GameInfo.Policies() do
+		if policyInfo.PolicyBranchType == "POLICY_BRANCH_ANTI_THEISM" then
+			if player:HasPolicy(policyInfo.ID) then
+				print(" -counting policy ", GameInfo.Policies[policyInfo.ID].Type)
+				civsCorrectedPts = civsCorrectedPts + 10
+				if bRenounce then
+					loseCLs = loseCLs + 1
+					player:SetHasPolicy(policyInfo.ID, false)
+				end
+			end
+		end
+	end
+	if player:IsPolicyBranchUnlocked(GameInfoTypes.POLICY_BRANCH_ANTI_THEISM) then
+		print(" -counting Anti-Theism opener/finisher policies and locking the branch")
+		if player:HasPolicy(GameInfoTypes.POLICY_ANTI_THEISM_FINISHER) then	--don't count for CL reduction
+			civsCorrectedPts = civsCorrectedPts + 10
+			if bRenounce then
+				player:SetHasPolicy(GameInfoTypes.POLICY_ANTI_THEISM_FINISHER, false)
+			end
+		end
+		civsCorrectedPts = civsCorrectedPts + 10
+		if bRenounce then
+			loseCLs = loseCLs + 1
+			player:SetHasPolicy(GameInfoTypes.POLICY_ANTI_THEISM, false)
+			player:SetPolicyBranchUnlocked(GameInfoTypes.POLICY_BRANCH_ANTI_THEISM, false)
+		end
+	end
+	eaPlayer.culturalLevel = eaPlayer.culturalLevel - loseCLs
+
+	--spellcasters flee even if civ not fallen (Prophecy of Va may not be made yet, but we don't want spellcasters reanimating dead)
+	for iPerson, eaPerson in pairs(gPeople) do
+		if eaPerson.iPlayer == iPlayer and eaPerson.spells then
+			fallenFollowersDestr = fallenFollowersDestr + 2 * eaPerson.level
+			KillPerson(iPlayer, iPerson, unit, -1, "Renounce Maleficium")	--individual death notification suppressed
+		end
+	end
+
+	--only full civs get credit and only if not fallen
+	if fullCivs[iOtherPlayer] then
+		local eaOtherPlayer = gPlayers[iOtherPlayer]
+		if not eaOtherPlayer.bIsFallen then
+			if bRenounce then		--credit is permanent
+				eaOtherPlayer.civsCorrected = (eaOtherPlayer.civsCorrected or 0) + civsCorrectedPts
+			else		--iPlayer was killed; credit is given provisionally and may be revoked if player resurected into world where Ahriman's Vault has not been sealed
+				eaOtherPlayer.civsCorrectedProvisional = eaOtherPlayer.civsCorrectedProvisional or {}
+				eaOtherPlayer.civsCorrectedProvisional[iPlayer] = (eaOtherPlayer.civsCorrectedProvisional[iPlayer] or 0) + civsCorrectedPts
+			end
+			eaOtherPlayer.fallenFollowersDestr = (eaOtherPlayer.fallenFollowersDestr or 0) + fallenFollowersDestr
+		end
+	end
+
+	--can we enable protector victory now?
+	TestEnableProtectorConditions()
+
+end
+
+local function OnRenounceMaleficium(iPlayer1, iPlayer2)
+	print("OnRenounceMaleficium ", iPlayer1, iPlayer2)
+	--one player must be persuing Maleficium or anti-Theism and the other not; use that to figure out who is renouncing
+	local player, otherPlayer = Players[iPlayer1], Players[iPlayer2]
+	local malLevel = player:GetMaleficiumLevel()
+	local iPlayer, iOtherPlayer
+	if (malLevel > 0) == (otherPlayer:GetMaleficiumLevel() > 0) then
+		error("Renounce maleficium by or to wrong player " .. iPlayer1 .. " " .. iPlayer2 .. " " .. malLevel .. " " .. malLevelOther)
+	end
+	if malLevel > 0 then
+		iPlayer, iOtherPlayer = iPlayer1, iPlayer2
+	else
+		player, otherPlayer = otherPlayer, player
+		iPlayer, iOtherPlayer = iPlayer2, iPlayer1
+	end
+	print(" -player " .. iPlayer .. " renounces with GetMaleficiumLevel = ", player:GetMaleficiumLevel())
+	local eaPlayer = gPlayers[iPlayer]
+
+	--mark as renounced to restrict techs/policies; set MaleficiumLevel to 0 forever so this item will never be offered or asked for
+	eaPlayer.bRenouncedMaleficium = true
+	player:SetMaleficiumLevel(0)
+
+	--remove maleficium and give credit
+	StripCreditMaleficium(iPlayer, iOtherPlayer, true)
+
+	--player may or may not be fallen; we can undo that here unless they are Anra religion (may become fallen again via Anra)
+	if eaPlayer.religionID ~= RELIGION_ANRA then
+		eaPlayer.bIsFallen = false
+	end
+
+	--update Top Panel for active player
+	if iPlayer == g_iActivePlayer then
+		LuaEvents.TopPanelInfoDirty()
+	end
+end
+local function X_OnRenounceMaleficium(iPlayer1, iPlayer2) return HandleError21(OnRenounceMaleficium, iPlayer1, iPlayer2) end
+GameEvents.RenounceMaleficium.Add(X_OnRenounceMaleficium)
+
+
 
 ----------------------------------------------------------------
 -- Player change

@@ -14,6 +14,20 @@
 			<Text> </Text>
 		</Row>
 
+		<!-- Generic -->
+		<Row Tag="TXT_KEY_EA_GENERIC_OR_CONNECTER">
+			<Text>{1_Str} or {2_Str}</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_GENERIC_AND_CONNECTER">
+			<Text>{1_Str} and {2_Str}</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_GENERIC_FOR_EACH_CONNECTER">
+			<Text>{1_Str} for each {2_Str}</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_GENERIC_FOR_EACH_IMPROVED_CONNECTER">
+			<Text>{1_Str} for each improved {2_Str}</Text>
+		</Row>
+
 		<!-- Game Setup -->
 		<Row Tag="TXT_KEY_EA_MODDING_SETUP_TITLE">
 			<Text>Éa Game Setup</Text>
@@ -79,10 +93,24 @@
 
 		<!-- Top Panel -->
 		<Row Tag="TXT_KEY_EA_TP_KNOWLEDGE_MAINT">
-			<Text>Knowledge Maintenance is currently [COLOR_NEGATIVE_TEXT]{1_Num}%[ENDCOLOR] based on [COLOR_POSITIVE_TEXT]{2_Num}[ENDCOLOR] known techs x [COLOR_POSITIVE_TEXT]{3_Pop}[ENDCOLOR] total [ICON_CITIZEN] Citizens x [COLOR_NEGATIVE_TEXT]{4_Num}%[ENDCOLOR] KM per known tech per citizen{5_InsertTxt}. KM is used together with tech-specific modifiers (if any) to calculate research cost for discovering new technologies.</Text>
+			<Text>Knowledge Maintenance is currently [COLOR_NEGATIVE_TEXT]{1_Num}%[ENDCOLOR] based on [COLOR_POSITIVE_TEXT]{2_Num}[ENDCOLOR] known techs x [COLOR_POSITIVE_TEXT]{3_Pop}[ENDCOLOR] total [ICON_CITIZEN] Citizens {4_PopInsertTxt} x [COLOR_NEGATIVE_TEXT]{5_Num}%[ENDCOLOR] KM per known tech per citizen{6_InsertTxt}. KM is used together with tech-specific modifiers (if any) to calculate research cost for discovering new technologies.</Text>
 		</Row>
-		<Row Tag="TXT_KEY_EA_TP_KNOWLEDGE_MAINT_ADJUSMENT_INSERT">
-			<Text> (the later value is reduced for [COLOR_POSITIVE_TEXT]{1_Civ}[ENDCOLOR] from base [COLOR_NEGATIVE_TEXT]{2_Num}%[ENDCOLOR])</Text>
+
+		<Row Tag="TXT_KEY_EA_TP_KNOWLEDGE_MAINT_POP_INSERT">
+			<Text>(reduced by [COLOR_POSITIVE_TEXT]{1_Text}[ENDCOLOR] for [COLOR_POSITIVE_TEXT]Intelligent Archives[ENDCOLOR])</Text>
+		</Row>
+		
+		<Row Tag="TXT_KEY_EA_TP_KNOWLEDGE_MAINT_CIV_INSERT">
+			<Text>[COLOR_POSITIVE_TEXT]{1_Percent}%[ENDCOLOR] for [COLOR_POSITIVE_TEXT]{2_Civ}[ENDCOLOR]</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_TP_AND">
+			<Text>and</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_TP_KNOWLEDGE_MAINT_GREAT_LIBRARY_INSERT">
+			<Text>[COLOR_POSITIVE_TEXT]{1_Percent}%[ENDCOLOR] for [COLOR_POSITIVE_TEXT]Great Library[ENDCOLOR]</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_TP_KNOWLEDGE_MAINT_MOD_INSERT">
+			<Text>(reduced [COLOR_POSITIVE_TEXT]{1_Text}[ENDCOLOR])</Text>
 		</Row>
 		
 		<Row Tag="TXT_KEY_EA_TP_GOLD_FROM_LEADER">
@@ -230,6 +258,17 @@
 		</Row>
 
 		<!-- Info Tooltip -->
+		<Row Tag="TXT_KEY_EA_GENERIC_OR">
+			<Text>or</Text>
+		</Row>
+
+		<Row Tag="TXT_KEY_EA_REQUIRES_NEARBY_HELP_INFO">
+			<Text>[ICON_BULLET] Requires nearby {1_Str}</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_PRODUCES_HELP_INFO">
+			<Text>[ICON_BULLET] Produces {1_Str}</Text>
+		</Row>
+		
 		<Row Tag="TXT_KEY_EA_FAVOR_HELP_INFO">
 			<Text>[ICON_PEACE] Divine Favor is used in the casting of spells by Azzandara followers.</Text>
 		</Row>
@@ -260,16 +299,28 @@
 		<Row Tag="TXT_KEY_EA_PRODUCTION_BUILDING_MANA">
 			<Text>[ICON_STAR] Mana: +{1_Num}</Text>
 		</Row>
+		<Row Tag="TXT_KEY_EA_PRODUCTION_BUILDING_HEALTH_POSITIVE">
+			<Text>[ICON_HEALTH] Health: +{1_Num}</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_PRODUCTION_BUILDING_HEALTH_NEGATIVE">
+			<Text>[ICON_UNHEALTH] Health: {1_Num}</Text>
+		</Row>
 
 		<!-- Info Tooltip and Dll hard-coded -->
 		<Row Tag="TXT_KEY_EA_PRODMOD_YIELD_LEADER">
 			<Text>[NEWLINE][ICON_BULLET]Leader Modifier: {1_Num}%</Text>
 		</Row>
-		<Row Tag="TXT_KEY_EA_PRODMOD_YIELD_CITY_RESIDENT">
-			<Text>[NEWLINE][ICON_BULLET]City Resident Modifier: {1_Num}%</Text>
-		</Row>
 		
 		<!-- POPUPS -->
+		
+		<!-- Trade -->
+		<Row Tag="TXT_KEY_EA_DIPLO_RENOUNCE_MALEFICIUM">
+			<Text>RENOUNCE MALEFICIUM</Text>
+		</Row>
+		<Row Tag="TXT_KEY_EA_DIPLO_RENOUNCE_MALEFICIUM_TT">
+			<Text>The civilization will give up Maleficium and all its enabled technologies plus all (Anti-)Theism policies. All spellcasters belonging to the civilization will desert it, going rogue for a time and possibly joining other Fallen civilizations.</Text>
+		</Row>
+		
 		<!-- Armageddon Popup -->
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_1A">
 			<Text>The Fallen (followers of Aŋra and those that know Maleficium) have begun to consume mana at a dangerous rate. Mana is the material fabric of Éa and all things in it, and it cannot be replenished. If this process goes unchecked, the weave of the world will begin to fray. It will eventually come apart at the seams.</Text>
@@ -278,34 +329,34 @@
 			<Text>Other civilizations have begun to take note of your use of mana. They feel that its consumption may damage the world. But it is a silly concern: the Sum of All Mana is quite large. Perhaps they will move on to more immediate problems.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_2">
-			<Text>The Sum of All Mana has been depleted to 90%. Undead begin to spawn from old battlefields and city graveyards, and demons from breach plots (1% chance per plot per turn increasing to 10% as the Sum of All Mana depletes to zero).</Text>
+			<Text>The Sum of All Mana has been depleted below 95%. Undead begin to spawn from old battlefields and city graveyards, and demons from breach plots (1% chance per plot per turn increasing to 10% as the Sum of All Mana depletes to zero).</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_3">
-			<Text>The Sum of All Mana has been depleted to 80%. The effect begins to sap the happiness and health of from all civilizations (2 unhappiness and unhealth increasing to 20 as the Sum of All Mana approaches zero).</Text>
+			<Text>The Sum of All Mana has been depleted below 90%. The effect begins to sap the happiness and health of from all civilizations (2 unhappiness and unhealth increasing to 20 as the Sum of All Mana approaches zero).</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_4">
-			<Text>The Sum of All Mana has been depleted to 66%. Blight begins to spread from already blighted plots, and breach from already breached plots. The rate of spread increases as the Sum of All Mana depletes to zero.</Text>
+			<Text>The Sum of All Mana has been depleted below 80%. Blight begins to spread from already blighted plots, and breach from already breached plots. The rate of spread increases as the Sum of All Mana depletes to zero.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_5">
-			<Text>The Sum of All Mana has been depleted to 50%. The world is corrupted by a surge of blight affecting 1 out of every 20 plots. All mana accumulative processes are reduced by 33% (and reduced further toward 90% as the Sum of All Mana depletes to zero).</Text>
+			<Text>The Sum of All Mana has been depleted below 70%. The world is corrupted by a surge of blight affecting 1 out of every 20 plots. All mana accumulative processes are reduced by 33% (and reduced further toward 90% as the Sum of All Mana depletes to zero).</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_6">
-			<Text>The Sum of All Mana has been depleted to 33%. The fabric of the world begins to tear: 1 out of every 40 plots become Breached. Blight begins to appear spontaneously (2.5% chance per unaffected plot per turn increasing to 10% as the Sum of All Mana depletes to zero).</Text>
+			<Text>The Sum of All Mana has been depleted below 60%. The fabric of the world begins to tear: 1 out of every 40 plots become Breached. Blight begins to appear spontaneously (2.5% chance per unaffected plot per turn increasing to 10% as the Sum of All Mana depletes to zero).</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_7">
-			<Text>The Sum of All Mana has been depleted to 25%. Pestilence, the first of the Four Horsemen, arrives riding a White Horse. He carries the Sickening Bow and the Plague Crown which cause (respectively) sickness in all units and plague in all cities that he attacks.</Text>
+			<Text>The Sum of All Mana has been depleted below 50%. Pestilence, the first of the Four Horsemen, arrives riding a White Horse. He carries the Sickening Bow and the Plague Crown which cause (respectively) sickness in all units and plague in all cities that he attacks.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_8">
-			<Text>The Sum of All Mana has been depleted to 20%. War arrives riding a Red Horse. He carries a sword (also called War) that causes nearby civilizations to sever relationships and war upon each other, and the cities and units of larger civilizations to revolt and war upon their owners.</Text>
+			<Text>The Sum of All Mana has been depleted below 40%. War arrives riding a Red Horse. He carries a sword (also called War) that causes nearby civilizations to sever relationships and war upon each other, and the cities and units of larger civilizations to revolt and war upon their owners.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_9">
-			<Text>The Sum of All Mana has been depleted to 15%. Famine arrives riding a Black Horse. He carries the Scales of Insolvency which bring starvation to all nearby units and cities.</Text>
+			<Text>The Sum of All Mana has been depleted below 30%. Famine arrives riding a Black Horse. He carries the Scales of Insolvency which bring starvation to all nearby units and cities.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_10">
-			<Text>The Sum of All Mana has been depleted to 10%. Death arrives riding a Pale Horse. He carries no items but kills by sword, famine, plague and the enraged animals and beasts of Ea.</Text>
+			<Text>The Sum of All Mana has been depleted below 20%. Death arrives riding a Pale Horse. He carries no items but kills by sword, famine, plague and the enraged animals and beasts of Ea.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_EA_ARMAGEDDON_11">
-			<Text>The Sum of All Mana has been depleted to 5%. Breach begins to appear spontaneously. Both breach and blight accelerate in their rate of spread. The spawning rate of demons (from breach) and undead (from killing fields left by the Four Horsemen) accelerates rapidly.</Text>
+			<Text>The Sum of All Mana has been depleted below 10%. Breach begins to appear spontaneously. Both breach and blight accelerate in their rate of spread. The spawning rate of demons (from breach) and undead (from killing fields left by the Four Horsemen) accelerates rapidly.</Text>
 		</Row>
 		<Row Tag="TXT_KEY_HEALTH_FROM_HANDICAP">
 			<Text>from Difficulty Level</Text>

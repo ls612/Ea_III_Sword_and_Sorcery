@@ -3,7 +3,34 @@
 -- DateCreated: 3/24/2014 10:02:52 AM
 --------------------------------------------------------------
 
+function ScoreEaCivs(bNewGame)
+	--calculate various numbers for civs in a futile attempt to balance
+	
+	--tier 7 is not 6x better despite cost, because it's stupid for most civs to research them
+	--tier 1-3 are so cheap only the KM matters
+	--so calculate total# and tiers > 3 (so tier 4, 5, 6, 7 are scored 1, 2, 3, 4)
+	if not bNewGame then return end
+	print("----- ScoreEaCivs -----")
+	print("Civ", "#FavTechs", "Tiers>3")
+	for eaCiv in GameInfo.EaCivs() do
+		local numFavTechs, numTiersGT3 = 0, 0
+		for row in GameInfo.EaCiv_FavoredTechs("EaCivType = '" .. eaCiv.Type .. "'") do
+			numFavTechs = numFavTechs + 1
+			local tier = gg_techTier[GameInfoTypes[row.TechType] ]
+			if not tier then
+				error("No tier for Favored Tech: " .. row.TechType)
+			end
+			if tier > 3 then
+				numTiersGT3 = numTiersGT3 + tier - 3
+			end
+		end
+		print(Locale.Lookup(eaCiv.Description), numFavTechs, numTiersGT3)
+	end
+end
+
+
 local bHidden =			MapModData.bHidden
+local fullCivs =		MapModData.fullCivs
 
 local tableByOrderType = {	[OrderTypes.ORDER_TRAIN] = "Units",
 							[OrderTypes.ORDER_CONSTRUCT] = "Buildings",
@@ -16,6 +43,23 @@ local function DebugOnPlayerPreAIUnitUpdate(iPlayer)
 
 	print("*************************************")
 	print("DebugOnPlayerPreAIUnitUpdate ", iPlayer)
+
+	if fullCivs[iPlayer] then
+		print("--Policy branches unlocked:")
+		for branchInfo in GameInfo.PolicyBranchTypes() do
+			if player:IsPolicyBranchUnlocked(branchInfo.ID) then
+				print(branchInfo.Type)
+			end
+		end
+		print("--Policies:")
+		for policyInfo in GameInfo.Policies() do
+			if player:HasPolicy(policyInfo.ID) then
+				print(policyInfo.Type)
+			end
+		end
+	end
+
+	print("--Cities:")
 	for city in player:Cities() do
 		local name = city:GetName()
 		print("Build queue for ", name, ":")
@@ -97,12 +141,12 @@ end
 
 --[[
 function ListenerTest1(...)
-	print("GameplayFX", unpack(arg))
+	print("GameplayFX", ...)
 end
 Events.GameplayFX.Add(ListenerTest1)
 
 function ListenerTest2(...)
-	print("UnitStateChangeDetected", unpack(arg))
+	print("UnitStateChangeDetected", ...)
 end
 Events.UnitStateChangeDetected.Add(ListenerTest2)
 
@@ -113,49 +157,49 @@ local i = 0
 
 local function OnNewGameTurn(...)
 	i = i + 1
-	print("turnEventTest NewGameTurn", unpack(arg), i)
+	print("turnEventTest NewGameTurn", ..., i)
 end
 Events.NewGameTurn.Add(OnNewGameTurn)
 
 local function OnActivePlayerTurnStart(...)
 	i = i + 1
-	print("turnEventTest ActivePlayerTurnStart", unpack(arg), i)
+	print("turnEventTest ActivePlayerTurnStart", ..., i)
 end
 Events.ActivePlayerTurnStart.Add(OnActivePlayerTurnStart)
 
 local function OnPlayerDoTurn(...)
 	i = i + 1
-	print("turnEventTest PlayerDoTurn", unpack(arg), i)
+	print("turnEventTest PlayerDoTurn", ..., i)
 end
 GameEvents.PlayerDoTurn.Add(OnPlayerDoTurn)
 
 local function OnPlayerPreAIUnitUpdate(...)
 	i = i + 1
-	print("turnEventTest PlayerPreAIUnitUpdate", unpack(arg), i)
+	print("turnEventTest PlayerPreAIUnitUpdate", ..., i)
 end
 GameEvents.PlayerPreAIUnitUpdate.Add(OnPlayerPreAIUnitUpdate)
 
 local function OnAIProcessingStartedForPlayer(...)
 	i = i + 1
-	print("turnEventTest AIProcessingStartedForPlayer", unpack(arg), i)
+	print("turnEventTest AIProcessingStartedForPlayer", ..., i)
 end
 Events.AIProcessingStartedForPlayer.Add(OnAIProcessingStartedForPlayer)
 
 local function OnAIProcessingEndedForPlayer(...)
 	i = i + 1
-	print("turnEventTest AIProcessingEndedForPlayer", unpack(arg), i)
+	print("turnEventTest AIProcessingEndedForPlayer", ..., i)
 end
 Events.AIProcessingEndedForPlayer.Add(OnAIProcessingEndedForPlayer)
 
 local function OnActivePlayerTurnEnd(...)
 	i = i + 1
-	print("turnEventTest ActivePlayerTurnEnd", unpack(arg), i)
+	print("turnEventTest ActivePlayerTurnEnd", ..., i)
 end
 Events.ActivePlayerTurnEnd.Add(OnActivePlayerTurnEnd)
 
 local function OnGameCoreTestVictory(...)
 	i = i + 1
-	print("turnEventTest GameCoreTestVictory", unpack(arg), i)
+	print("turnEventTest GameCoreTestVictory", ..., i)
 end
 GameEvents.GameCoreTestVictory.Add(OnGameCoreTestVictory)
 
